@@ -126,9 +126,14 @@ sudo ./install.sh
 | `vguard status` | Escanea los volúmenes gestionados y muestra el estado de salud y uso en disco. |
 | `vguard audit <ruta>` | Evalúa desviaciones de permisos respecto a `.vguard_meta` sin modificar archivos. |
 | `vguard heal <ruta>` | **Autocuración:** Restablece propietario, permisos POSIX y SELinux declarados. |
+| `vguard rename <target> <nuevo_nombre>` | **Renombrar:** Modifica nombre de carpeta, volumen LVM, `/etc/fstab` y `.vguard_meta`. |
+| `vguard resize <target> <tamaño>` | **Extensión en Caliente:** Amplía un volumen LVM NVMe y su sistema de archivos XFS. |
+| `vguard mkdir <target> <subcarpeta>` | **Subcarpeta con Herencia:** Crea subdirectorios aplicando propietario y SELinux padre. |
+| `vguard remove <target>` | **Eliminación Segura:** Desmonta, elimina entradas fstab/LVM y carpetas previa doble confirmación. |
 | `vguard snap <servicio> [tamaño]` | Crea un snapshot LVM instantáneo previo a actualizaciones de contenedores. |
 | `vguard snap-list` | Lista los snapshots LVM activos en el Volume Group. |
 | `vguard rollback <snap_nombre>` | Fusiona un snapshot LVM para revertir el estado del volumen de datos. |
+| `vguard update` | **Auto-Actualización:** Ejecuta `git pull` y actualiza binarios y plantillas del sistema. |
 
 ---
 

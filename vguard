@@ -21,6 +21,12 @@ source "$SCRIPT_DIR/src/heal.sh"
 source "$SCRIPT_DIR/src/status.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/src/snap.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/remove.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/update.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/manage.sh"
 
 mostrar_ayuda() {
     print_banner
@@ -28,23 +34,30 @@ mostrar_ayuda() {
     echo "  vguard <comando> [opciones]"
     echo ""
     echo -e "${CLR_BOLD}COMANDOS DISPONIBLES:${CLR_RESET}"
-    echo "  init                       Inicializa la configuración base (/etc/vguard/vguard.conf)"
-    echo "  create [tier] [nombre]     Crea un nuevo volumen o carpeta asegurada"
-    echo "  heal | repair <ruta>       Restaura y plancha los permisos/SELinux según el estado declarativo"
-    echo "  audit <ruta>               Audita las desviaciones de permisos de una carpeta sin modificarlos"
-    echo "  status | list | ls         Lista todos los volúmenes gestionados y evalúa su salud"
-    echo "  snap [servicio] [tamaño]   Crea un snapshot LVM instantáneo de un volumen NVMe"
-    echo "  snap-list                  Lista los snapshots LVM activos"
-    echo "  rollback [snap_nombre]     Restaura un snapshot LVM previo"
-    echo "  help | --help | -h         Muestra este menú de ayuda"
+    echo "  init                            Inicializa la configuración base (/etc/vguard/vguard.conf)"
+    echo "  create [tier] [nombre] [tam]    Crea un nuevo volumen o carpeta asegurada"
+    echo "  heal | repair <ruta>            Restaura y plancha permisos/SELinux según estado declarativo"
+    echo "  audit <ruta>                    Audita desviaciones de permisos sin modificarlos"
+    echo "  status | list | ls              Lista todos los volúmenes gestionados y evalúa su salud"
+    echo "  manage | edit                   Menú interactivo de gestión y modificación de volúmenes"
+    echo "  rename <target> <nuevo_nombre>  Renombra un servicio, directorio y su Volumen LVM asociado"
+    echo "  resize <target> <tamaño>        Extiende en caliente un volumen LVM NVMe (+10G, 50G)"
+    echo "  mkdir <target> <subcarpeta>     Crea una subcarpeta asegurada con herencia de permisos"
+    echo "  remove | rm | delete <target>   Elimina un servicio/volumen LVM previa doble confirmación"
+    echo "  snap [servicio] [tamaño]        Crea un snapshot LVM instantáneo de un volumen NVMe"
+    echo "  snap-list                       Lista los snapshots LVM activos"
+    echo "  rollback [snap_nombre]          Restaura un snapshot LVM previo"
+    echo "  update                          Actualiza VGUARD vía Git pull y re-instala ejecutable"
+    echo "  help | --help | -h              Muestra este menú de ayuda"
     echo ""
     echo -e "${CLR_BOLD}EJEMPLOS DE USO:${CLR_RESET}"
-    echo "  vguard create"
     echo "  vguard create lvm_nvme_fast redis_prod 10G"
-    echo "  vguard create contenedor_hdd uptime_kuma"
+    echo "  vguard rename redis_prod redis_cache"
+    echo "  vguard resize redis_cache +10G"
+    echo "  vguard mkdir gitea repositories"
+    echo "  vguard update"
     echo "  vguard heal /mnt/sda1/servicios/uptime_kuma"
-    echo "  vguard status"
-    echo "  vguard snap redis_prod 5G"
+    echo "  vguard remove redis_cache"
     echo ""
 }
 
@@ -75,6 +88,26 @@ main() {
             load_config
             listar_volumenes_gestionados
             ;;
+        manage|edit)
+            load_config
+            gestionar_almacenamiento
+            ;;
+        rename)
+            load_config
+            renombrar_almacenamiento "$2" "$3"
+            ;;
+        resize|extend)
+            load_config
+            redimensionar_volumen "$2" "$3"
+            ;;
+        mkdir|subfolder)
+            load_config
+            crear_subcarpeta "$2" "$3"
+            ;;
+        remove|rm|delete)
+            load_config
+            remover_almacenamiento "$2"
+            ;;
         snap)
             load_config
             crear_snapshot "$2" "$3"
@@ -87,6 +120,9 @@ main() {
             load_config
             revertir_snapshot "$2"
             ;;
+        update|self-update)
+            actualizar_vguard
+            ;;
         help|--help|-h)
             mostrar_ayuda
             ;;
@@ -97,16 +133,22 @@ main() {
             echo "1) Crear nuevo volumen o carpeta de servicio"
             echo "2) Auditar y reparar permisos de una carpeta existente"
             echo "3) Ver estado global de almacenamiento y permisos"
-            echo "4) Crear Snapshot LVM de emergencia"
-            echo "5) Salir"
-            read -p "Selecciona una acción (1-5): " opcion_menu
+            echo "4) Editar / Renombrar / Redimensionar un volumen"
+            echo "5) Eliminar servicio o volumen gestionado (Doble confirmación)"
+            echo "6) Crear Snapshot LVM de emergencia"
+            echo "7) Actualizar VGUARD (git pull)"
+            echo "8) Salir"
+            read -p "Selecciona una acción (1-8): " opcion_menu
 
             case "$opcion_menu" in
                 1) crear_almacenamiento ;;
                 2) reparar_almacenamiento ;;
                 3) listar_volumenes_gestionados ;;
-                4) crear_snapshot ;;
-                5) exit 0 ;;
+                4) gestionar_almacenamiento ;;
+                5) remover_almacenamiento ;;
+                6) crear_snapshot ;;
+                7) actualizar_vguard ;;
+                8) exit 0 ;;
                 *) msg_error "Opción inválida."; exit 1 ;;
             esac
             ;;
