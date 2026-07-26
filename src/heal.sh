@@ -115,8 +115,13 @@ reparar_almacenamiento() {
     local ruta="$1"
 
     if [ -z "$ruta" ]; then
-        msg_section "AUDITORÍA Y REPARACIÓN DE PERMISOS"
-        read -p "Ingresa la ruta absoluta a reparar (ej. /mnt/sda1/servicios/gitea): " ruta
+        if cargar_contexto >/dev/null 2>&1; then
+            ruta="$CTX_MOUNT_POINT"
+            msg_info "Usando objetivo activo del Workspace: $CTX_SERVICE_NAME ($ruta)"
+        else
+            msg_section "AUDITORÍA Y REPARACIÓN DE PERMISOS"
+            read -p "Ingresa la ruta absoluta a reparar (ej. /mnt/sda1/servicios/gitea): " ruta
+        fi
     fi
 
     if [ -z "$ruta" ]; then

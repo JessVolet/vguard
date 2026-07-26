@@ -192,5 +192,7 @@ crear_almacenamiento() {
 
     draw_separator
     msg_success "Almacenamiento listo y asegurado en: $ruta_final"
+    guardar_contexto "$nombre_servicio" "$tipo" "$ruta_final" "$lv_path" "$VGUARD_OWNER" "$posix" "$selinux"
+    msg_info "Objetivo marcado como activo automáticamente en el Workspace."
     draw_separator
 }

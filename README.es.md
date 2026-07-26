@@ -1,6 +1,8 @@
-# VGUARD (Guardia de Almacenamiento y Motor de Políticas de Infraestructura)
+# VGUARD v2.0 (Guardia de Almacenamiento y Motor de Políticas de Infraestructura)
 
-VGUARD es una herramienta CLI de automatización modular y declarativa diseñada para aplicar, auditar y mantener las políticas de almacenamiento, asignación de volúmenes LVM, permisos POSIX y contextos de seguridad SELinux en entornos de servidor Linux (familia Fedora Server / RHEL).
+VGUARD v2.0 es una herramienta CLI de automatización modular, declarativa y con estado (**Stateful Workspace Context**) diseñada para aplicar, auditar y mantener las políticas de almacenamiento, asignación de volúmenes LVM, permisos POSIX y contextos de seguridad SELinux en entornos de servidor Linux (familia Fedora Server / RHEL).
+
+VGUARD v2.0 introduce una arquitectura de **Contexto de Sesión Activo** (`vguard select`, `vguard selected`), permitiendo a los administradores fijar un objetivo de volumen activo y ejecutar operaciones consecutivas sin necesidad de reescribir rutas o nombres en cada comando.
 
 Esta herramienta está diseñada específicamente para automatizar y hacer cumplir las políticas de infraestructura establecidas en la especificación [ServerInfraestructureDockers](https://gitlab.com/sowtarez/ServerInfraestructureDockers).
 
@@ -24,93 +26,35 @@ VGUARD actúa como un motor de políticas automatizado para el almacenamiento de
   - Partición `/dev/sda1` montada en `/mnt/sda1` (ext4): Reservada para cargas de almacenamiento masivo, respaldos fríos, repositorios Git (Gitea) y archivos de usuario en WebDAV.
   - Segregación estricta de directorios: `/mnt/sda1/servicios/`, `/mnt/sda1/compartido/`, `/mnt/sda1/sistema/`.
 
-### 2. Reglas de Contenedorización y Seguridad
-
-- **Prohibición de Volúmenes Anónimos:** Todos los contenedores en Podman/Docker deben utilizar Bind Mounts explícitos apuntando a rutas físicas del host. Los volúmenes nombrados anónimos en `/var/lib/containers/storage/volumes/` están estrictamente prohibidos.
-- **Cumplimiento de SELinux:** Las rutas asignadas deben estar etiquetadas con los contextos de seguridad correspondientes (`container_file_t` para contenedores, `samba_share_t` para carpetas compartidas SMB/NFS).
-- **Aislamiento de Red:** Los microservicios se comunican mediante una red bridge dedicada (`frontend_proxy`). No se exponen puertos directos al host a menos que sea estrictamente necesario para servicios de infraestructura fija (ej. DNS o SSH).
-
 ---
 
-## Arquitectura del Repositorio
+## Arquitectura de Contexto de Sesión Activo (`/run/vguard/context.json`)
 
-```text
-vguard/
-├── README.md               # Documentación principal (Inglés)
-├── README.es.md            # Documentación secundaria (Español)
-├── install.sh              # Script de instalación global (/usr/local/bin o ~/.local/bin)
-├── vguard                  # Ejecutable principal y enrutador de comandos
-├── config/
-│   └── vguard.conf.example # Configuración por defecto de políticas de infraestructura
-└── src/
-    ├── ui.sh               # Formato de terminal y utilidades de salida
-    ├── config.sh           # Gestor de configuración y procesador de políticas
-    ├── create.sh           # Aprovisionamiento de volúmenes, montaje y LVM
-    ├── heal.sh             # Motor de auditoría y autocuración (Self-Healing)
-    ├── status.sh           # Inventario global e inspección de desviaciones
-    └── snap.sh             # Gestión de ciclo de vida de Snapshots LVM y Rollback
+VGUARD v2.0 gestiona el contexto activo guardándolo en `/run/vguard/context.json` (o en `$HOME/.config/vguard/context.json` si no hay root):
+
+```json
+{
+  "service_name": "redis_prod",
+  "tier": "lvm_nvme_fast",
+  "mount_point": "/mnt/nvme_fast/redis_prod",
+  "lv_path": "/dev/fedora_server/redis_prod_data",
+  "owner": "vsynlo:vsynlo",
+  "posix": "770",
+  "selinux": "container_file_t",
+  "selected_at": "2026-07-25T23:55:00Z"
+}
 ```
 
 ---
 
-## Configuración (`vguard.conf`)
-
-Las políticas globales del sistema se declaran en `/etc/vguard/vguard.conf` (o en la ruta de usuario `$HOME/.config/vguard/vguard.conf`):
-
-```bash
-# Volume Group LVM
-VG_NAME="fedora_server"
-
-# Puntos de Montaje de Infraestructura
-PATH_HDD_SERVICIOS="/mnt/sda1/servicios"
-PATH_HDD_COMPARTIDO="/mnt/sda1/compartido"
-PATH_HDD_SISTEMA="/mnt/sda1/sistema"
-PATH_NVME_FAST="/mnt/nvme_fast"
-
-# Propietario por Defecto y Metadatos
-VGUARD_OWNER="vsynlo:vsynlo"
-META_FILE=".vguard_meta"
-
-# Contextos SELinux Predeterminados
-SELINUX_CONTAINER="container_file_t"
-SELINUX_NETWORK="samba_share_t"
-SELINUX_SYSTEM="systemd_system_unit_t"
-
-# Permisos POSIX
-PERM_POSIX_CONTAINER="770"
-PERM_POSIX_NETWORK="775"
-PERM_POSIX_SYSTEM="750"
-```
-
----
-
-## Estado Declarativo (`.vguard_meta`)
-
-Durante la creación, VGUARD inyecta un archivo de metadatos protegido (`chmod 600 root:root`) en la raíz de la carpeta de almacenamiento gestionada:
-
-```env
-# Archivo de Estado Declarativo - VGUARD
-VGUARD_VERSION="1.0"
-VGUARD_SERVICE_NAME="mysql_prod"
-VGUARD_TIER="lvm_nvme_fast"
-VGUARD_OWNER="vsynlo:vsynlo"
-VGUARD_POSIX="770"
-VGUARD_SELINUX="container_file_t"
-VGUARD_MOUNT_POINT="/mnt/nvme_fast/mysql_prod"
-VGUARD_LV_PATH="/dev/fedora_server/mysql_prod_data"
-VGUARD_CREATED_AT="2026-07-25T22:00:00-06:00"
-```
-
----
-
-## Instalación y Referencia de Comandos
+## Instalación y Referencia de Comandos CLI
 
 ### Instalación
 
 Ejecuta el script de instalación para vincular el ejecutable y crear los archivos de política:
 
 ```bash
-git clone https://github.com/sowtarez/vguard.git
+git clone https://github.com/tu-usuario/vguard.git
 cd vguard
 chmod +x install.sh
 sudo ./install.sh
@@ -118,41 +62,39 @@ sudo ./install.sh
 
 ### Resumen de Comandos CLI
 
-| Comando | Descripción |
-| :--- | :--- |
-| `vguard` | Inicia el menú interactivo guiado. |
-| `vguard init` | Inicializa la configuración por defecto en `/etc/vguard/vguard.conf`. |
-| `vguard create [tier] [nombre] [tamaño]` | Aprovisiona carpetas de servicio o Volúmenes Lógicos LVM. |
-| `vguard status` | Escanea los volúmenes gestionados y muestra el estado de salud y uso en disco. |
-| `vguard audit <ruta>` | Evalúa desviaciones de permisos respecto a `.vguard_meta` sin modificar archivos. |
-| `vguard heal <ruta>` | **Autocuración:** Restablece propietario, permisos POSIX y SELinux declarados. |
-| `vguard rename <target> <nuevo_nombre>` | **Renombrar:** Modifica nombre de carpeta, volumen LVM, `/etc/fstab` y `.vguard_meta`. |
-| `vguard resize <target> <tamaño>` | **Extensión en Caliente:** Amplía un volumen LVM NVMe y su sistema de archivos XFS. |
-| `vguard mkdir <target> <subcarpeta>` | **Subcarpeta con Herencia:** Crea subdirectorios aplicando propietario y SELinux padre. |
-| `vguard remove <target>` | **Eliminación Segura:** Desmonta, elimina entradas fstab/LVM y carpetas previa doble confirmación. |
-| `vguard snap <servicio> [tamaño]` | Crea un snapshot LVM instantáneo previo a actualizaciones de contenedores. |
-| `vguard snap-list` | Lista los snapshots LVM activos en el Volume Group. |
-| `vguard rollback <snap_nombre>` | Fusiona un snapshot LVM para revertir el estado del volumen de datos. |
-| `vguard update` | **Auto-Actualización:** Ejecuta `git pull` y actualiza binarios y plantillas del sistema. |
-| `vguard uninstall` | **Desinstalador:** Remueve el ejecutable VGUARD del sistema y limpia configuraciones. |
+| Categoría | Comando | Descripción |
+| :--- | :--- | :--- |
+| **Contexto** | `vguard select [<tier>] <volumen>` | Marca un volumen gestionado como objetivo activo del Workspace. |
+| **Contexto** | `vguard context` \| `vguard selected` | Muestra detalles del objetivo activo, uso en disco, SELinux y salud. |
+| **Contexto** | `vguard unselect` \| `vguard clear` | Limpia la selección de contexto activo. |
+| **Selected** | `vguard selected status` | Audita y muestra el informe completo del objetivo activo. |
+| **Selected** | `vguard selected resize <tamaño>` | Extiende en caliente el volumen LVM y XFS del objetivo activo. |
+| **Selected** | `vguard selected rename <nuevo>` | Renombra directorio, LVM LV, fstab y metadatos del objetivo activo. |
+| **Selected** | `vguard selected heal` | Restablece propietario, permisos POSIX y SELinux del objetivo activo. |
+| **Selected** | `vguard selected audit` | Evalúa desviaciones de permisos del objetivo activo sin modificar archivos. |
+| **Selected** | `vguard selected snap [tamaño]` | Crea un snapshot LVM instantáneo del objetivo activo. |
+| **Selected** | `vguard selected mkdir <subcarpeta>` | Crea una subcarpeta heredando políticas en el objetivo activo. |
+| **Selected** | `vguard selected delete` | Elimina el objetivo activo previa doble confirmación de seguridad. |
+| **Global** | `vguard list` \| `vguard ls` \| `vguard status` | Lista volúmenes gestionados resaltando la marca `[ACTIVE]`. |
+| `Global` | `vguard create <tier> <nombre> [tam]` | Aprovisiona un nuevo volumen y lo marca como activo automáticamente. |
+| `Global` | `vguard heal-all` | Audita y sana todos los volúmenes del sistema. |
+| `Global` | `vguard update` | Auto-actualiza el código vía Git pull y re-instala binarios. |
+| `Global` | `vguard uninstall` | Lanza el asistente de desinstalación de VGUARD. |
 
 ---
 
-## Flujos de Trabajo Operativos
+## Flujo de Trabajo Rápido v2.0
 
-### Aprovisionar Almacenamiento NVMe Rápido para Bases de Datos
 ```bash
-sudo vguard create lvm_nvme_fast mysql_prod 10G
-```
-*Crea `/dev/fedora_server/mysql_prod_data`, fomatea con XFS, registra en `/etc/fstab`, monta en `/mnt/nvme_fast/mysql_prod`, aplica el contexto SELinux `container_file_t`, asigna propietario `vsynlo:vsynlo` y escribe `.vguard_meta`.*
+# 1. Seleccionar objetivo activo en el Workspace
+sudo vguard select nvme_fast redis_prod
 
-### Auditar y Reparar Desviaciones de Permisos
-```bash
-vguard audit /mnt/sda1/servicios/gitea
-vguard heal /mnt/sda1/servicios/gitea
-```
+# 2. Inspeccionar estado del objetivo activo
+sudo vguard selected status
 
-### Crear Snapshots LVM Previos a Migraciones
-```bash
-sudo vguard snap mysql_prod 5G
+# 3. Extender volumen activo en +10G
+sudo vguard selected resize +10G
+
+# 4. Restaurar permisos y SELinux en volumen activo
+sudo vguard selected heal
 ```

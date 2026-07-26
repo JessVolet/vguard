@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# VGUARD - GUARDIA DE ALMACENAMIENTO Y INFRAESTRUCTURA DE SERVIDOR
+# VGUARD v2.0 - GUARDIA DE ALMACENAMIENTO Y MOTOR DE POLÍTICAS DE INFRAESTRUCTURA
 # ==============================================================================
 
 set -e
@@ -13,6 +13,8 @@ SCRIPT_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 source "$SCRIPT_DIR/src/ui.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/src/config.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/context.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/src/create.sh"
 # shellcheck source=/dev/null
@@ -33,32 +35,43 @@ mostrar_ayuda() {
     echo -e "${CLR_BOLD}USO:${CLR_RESET}"
     echo "  vguard <comando> [opciones]"
     echo ""
-    echo -e "${CLR_BOLD}COMANDOS DISPONIBLES:${CLR_RESET}"
-    echo "  init                            Inicializa la configuración base (/etc/vguard/vguard.conf)"
-    echo "  create [tier] [nombre] [tam]    Crea un nuevo volumen o carpeta asegurada"
-    echo "  heal | repair <ruta>            Restaura y plancha permisos/SELinux según estado declarativo"
-    echo "  audit <ruta>                    Audita desviaciones de permisos sin modificarlos"
-    echo "  status | list | ls              Lista todos los volúmenes gestionados y evalúa su salud"
-    echo "  manage | edit                   Menú interactivo de gestión y modificación de volúmenes"
-    echo "  rename <target> <nuevo_nombre>  Renombra un servicio, directorio y su Volumen LVM asociado"
-    echo "  resize <target> <tamaño>        Extiende en caliente un volumen LVM NVMe (+10G, 50G)"
-    echo "  mkdir <target> <subcarpeta>     Crea una subcarpeta asegurada con herencia de permisos"
-    echo "  remove | rm | delete <target>   Elimina un servicio/volumen LVM previa doble confirmación"
-    echo "  snap [servicio] [tamaño]        Crea un snapshot LVM instantáneo de un volumen NVMe"
-    echo "  snap-list                       Lista los snapshots LVM activos"
-    echo "  rollback [snap_nombre]          Restaura un snapshot LVM previo"
-    echo "  update                          Actualiza VGUARD vía Git pull y re-instala ejecutable"
-    echo "  uninstall                       Ejecuta el asistente de desinstalación de VGUARD"
-    echo "  help | --help | -h              Muestra este menú de ayuda"
+    echo -e "${CLR_BOLD}GESTIÓN DE CONTEXTO (SELECCIÓN):${CLR_RESET}"
+    echo "  use | select [<tier>] <volumen>  Selecciona un volumen como objetivo activo"
+    echo "  context | selected               Muestra detalles y estado del objetivo activo"
+    echo "  unselect | clear                 Limpia la selección actual"
     echo ""
-    echo -e "${CLR_BOLD}EJEMPLOS DE USO:${CLR_RESET}"
-    echo "  vguard create lvm_nvme_fast redis_prod 10G"
-    echo "  vguard rename redis_prod redis_cache"
-    echo "  vguard resize redis_cache +10G"
-    echo "  vguard mkdir gitea repositories"
-    echo "  vguard update"
-    echo "  vguard heal /mnt/sda1/servicios/uptime_kuma"
-    echo "  vguard remove redis_cache"
+    echo -e "${CLR_BOLD}ACCIONES SOBRE EL OBJETIVO ACTIVO (SELECTED):${CLR_RESET}"
+    echo "  selected status                  Muestra directorio, salud, espacio y SELinux"
+    echo "  selected resize <tamaño>         Extiende/reduce el volumen seleccionado (ej. +10G)"
+    echo "  selected rename <nuevo_nombre>   Renombra el servicio, directorio y LV activo"
+    echo "  selected heal                    Restaura permisos/SELinux del volumen activo"
+    echo "  selected audit                   Audita desviaciones de seguridad del volumen activo"
+    echo "  selected snap [nombre]           Toma un snapshot del volumen activo"
+    echo "  selected mkdir <subcarpeta>      Crea una subcarpeta asegurada en el volumen activo"
+    echo "  selected delete                  Elimina el volumen activo (requiere confirmación)"
+    echo ""
+    echo -e "${CLR_BOLD}COMANDOS GENERALES / GLOBALES:${CLR_RESET}"
+    echo "  list | ls | status               Lista volúmenes (resalta el activo si existe)"
+    echo "  create <tier> <nombre> [tam]     Crea un volumen y lo selecciona automáticamente"
+    echo "  heal [<ruta>]                    Restaura permisos/SELinux de un volumen o del activo"
+    echo "  heal-all                         Audita y sana todos los volúmenes del sistema"
+    echo "  audit [<ruta>]                   Audita desviaciones de permisos de un volumen o del activo"
+    echo "  rename <target> <nuevo_nombre>   Renombra un servicio/directorio específico"
+    echo "  resize <target> <tamaño>         Redimensiona un volumen LVM NVMe específico"
+    echo "  mkdir <target> <subcarpeta>      Crea una subcarpeta con herencia en una ruta específica"
+    echo "  remove | rm | delete <target>    Elimina un servicio/volumen LVM previa doble confirmación"
+    echo "  snap [servicio] [tamaño]         Crea un snapshot LVM de un volumen NVMe"
+    echo "  snap-list                        Lista los snapshots LVM activos"
+    echo "  rollback [snap_nombre]           Restaura un snapshot LVM previo"
+    echo "  update                           Actualiza VGUARD vía Git pull y re-instala"
+    echo "  uninstall                        Ejecuta el asistente de desinstalación de VGUARD"
+    echo "  help | --help | -h               Muestra este menú de ayuda"
+    echo ""
+    echo -e "${CLR_BOLD}EJEMPLO DE WORKFLOW RÁPIDO V2.0:${CLR_RESET}"
+    echo "  1. vguard select nvme_fast redis_prod"
+    echo "  2. vguard selected status"
+    echo "  3. vguard selected resize +10G"
+    echo "  4. vguard selected heal"
     echo ""
 }
 
@@ -69,6 +82,56 @@ main() {
         init)
             init_config
             ;;
+        use|select)
+            load_config
+            seleccionar_contexto "$2" "$3"
+            ;;
+        unselect|clear)
+            limpiar_contexto
+            ;;
+        context)
+            load_config
+            mostrar_contexto_activo
+            ;;
+        selected)
+            load_config
+            local subaccion="${2:-status}"
+            case "$subaccion" in
+                status|info)
+                    mostrar_contexto_activo
+                    ;;
+                resize|extend)
+                    redimensionar_volumen "" "$3"
+                    ;;
+                rename)
+                    renombrar_almacenamiento "" "$3"
+                    ;;
+                heal|repair)
+                    reparar_almacenamiento ""
+                    ;;
+                audit)
+                    if cargar_contexto >/dev/null 2>&1; then
+                        auditar_y_reparar_directorio "$CTX_MOUNT_POINT" "true"
+                    else
+                        msg_error "No hay ningún volumen seleccionado. Usa 'vguard select <servicio>' primero."
+                    fi
+                    ;;
+                snap)
+                    crear_snapshot "" "$3"
+                    ;;
+                mkdir|subfolder)
+                    crear_subcarpeta "" "$3"
+                    ;;
+                delete|remove|rm)
+                    remover_almacenamiento ""
+                    ;;
+                *)
+                    msg_error "Subcomando '$subaccion' para 'selected' no reconocido."
+                    mostrar_ayuda
+                    exit 1
+                    ;;
+            esac
+            ;;
         create)
             load_config
             crear_almacenamiento "$2" "$3" "$4"
@@ -77,13 +140,20 @@ main() {
             load_config
             reparar_almacenamiento "$2"
             ;;
+        heal-all)
+            load_config
+            sanar_todos_los_volumenes
+            ;;
         audit)
             load_config
-            if [ -z "$2" ]; then
-                msg_error "Especifica la ruta a auditar (ej. vguard audit /mnt/sda1/servicios/gitea)"
+            if [ -n "$2" ]; then
+                auditar_y_reparar_directorio "$2" "true"
+            elif cargar_contexto >/dev/null 2>&1; then
+                auditar_y_reparar_directorio "$CTX_MOUNT_POINT" "true"
+            else
+                msg_error "Especifica la ruta a auditar o selecciona un contexto activo con 'vguard select <servicio>'."
                 exit 1
             fi
-            auditar_y_reparar_directorio "$2" "true"
             ;;
         status|list|ls)
             load_config
@@ -139,27 +209,33 @@ main() {
             print_banner
             load_config
             msg_info "Menú Interactivo Principal"
-            echo "1) Crear nuevo volumen o carpeta de servicio"
-            echo "2) Auditar y reparar permisos de una carpeta existente"
-            echo "3) Ver estado global de almacenamiento y permisos"
-            echo "4) Editar / Renombrar / Redimensionar un volumen"
-            echo "5) Eliminar servicio o volumen gestionado (Doble confirmación)"
-            echo "6) Crear Snapshot LVM de emergencia"
-            echo "7) Actualizar VGUARD (git pull)"
-            echo "8) Desinstalar VGUARD"
-            echo "9) Salir"
-            read -p "Selecciona una acción (1-9): " opcion_menu
+            echo "1) Seleccionar objetivo activo (Workspace Select)"
+            echo "2) Ver detalles y estado del objetivo activo (Context Status)"
+            echo "3) Crear nuevo volumen o carpeta de servicio"
+            echo "4) Auditar y reparar permisos de una carpeta (Heal)"
+            echo "5) Ver estado global de almacenamiento y permisos (List)"
+            echo "6) Editar / Renombrar / Redimensionar un volumen"
+            echo "7) Eliminar servicio o volumen gestionado (Doble confirmación)"
+            echo "8) Crear Snapshot LVM de emergencia"
+            echo "9) Auditar y sanar TODOS los volúmenes (Heal-All)"
+            echo "10) Actualizar VGUARD (git pull)"
+            echo "11) Desinstalar VGUARD"
+            echo "12) Salir"
+            read -p "Selecciona una acción (1-12): " opcion_menu
 
             case "$opcion_menu" in
-                1) crear_almacenamiento ;;
-                2) reparar_almacenamiento ;;
-                3) listar_volumenes_gestionados ;;
-                4) gestionar_almacenamiento ;;
-                5) remover_almacenamiento ;;
-                6) crear_snapshot ;;
-                7) actualizar_vguard ;;
-                8) bash "$SCRIPT_DIR/uninstall.sh" ;;
-                9) exit 0 ;;
+                1) seleccionar_contexto ;;
+                2) mostrar_contexto_activo ;;
+                3) crear_almacenamiento ;;
+                4) reparar_almacenamiento ;;
+                5) listar_volumenes_gestionados ;;
+                6) gestionar_almacenamiento ;;
+                7) remover_almacenamiento ;;
+                8) crear_snapshot ;;
+                9) sanar_todos_los_volumenes ;;
+                10) actualizar_vguard ;;
+                11) bash "$SCRIPT_DIR/uninstall.sh" ;;
+                12) exit 0 ;;
                 *) msg_error "Opción inválida."; exit 1 ;;
             esac
             ;;

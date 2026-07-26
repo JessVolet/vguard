@@ -8,8 +8,13 @@ crear_snapshot() {
     local tamano_snap="${2:-5G}"
 
     if [ -z "$nombre_servicio" ]; then
-        msg_section "CREACIÓN DE SNAPSHOT LVM"
-        read -p "Ingresa el nombre del servicio (ej. redis_prod, mysql_prod): " nombre_servicio
+        if cargar_contexto >/dev/null 2>&1; then
+            nombre_servicio="$CTX_SERVICE_NAME"
+            msg_info "Usando servicio activo del Workspace: $nombre_servicio"
+        else
+            msg_section "CREACIÓN DE SNAPSHOT LVM"
+            read -p "Ingresa el nombre del servicio (ej. redis_prod, mysql_prod): " nombre_servicio
+        fi
     fi
 
     if [ "$EUID" -ne 0 ]; then

@@ -10,7 +10,12 @@ renombrar_almacenamiento() {
     msg_section "RENOMBRAR SERVICIO Y ALMACENAMIENTO"
 
     if [ -z "$target_input" ]; then
-        read -p "Ingresa el nombre o ruta del servicio actual a renombrar: " target_input
+        if cargar_contexto >/dev/null 2>&1; then
+            target_input="$CTX_MOUNT_POINT"
+            msg_info "Usando objetivo activo del Workspace: $CTX_SERVICE_NAME ($target_input)"
+        else
+            read -p "Ingresa el nombre o ruta del servicio actual a renombrar: " target_input
+        fi
     fi
 
     local ruta_actual=""
@@ -114,6 +119,11 @@ renombrar_almacenamiento() {
     # Reaplicar contextos y permisos en la nueva ruta
     aplicar_permisos "$ruta_nueva" "$VGUARD_OWNER" "$VGUARD_POSIX" "$VGUARD_SELINUX"
 
+    if cargar_contexto >/dev/null 2>&1 && [ "$CTX_MOUNT_POINT" = "$ruta_actual" ]; then
+        guardar_contexto "$nuevo_nombre" "$VGUARD_TIER" "$ruta_nueva" "$VGUARD_LV_PATH" "$VGUARD_OWNER" "$VGUARD_POSIX" "$VGUARD_SELINUX"
+        msg_info "Contexto activo actualizado a la nueva ruta y nombre."
+    fi
+
     msg_success "Almacenamiento renombrado exitosamente a: $ruta_nueva"
 }
 
@@ -124,7 +134,12 @@ redimensionar_volumen() {
     msg_section "REDIMENSIONAR VOLUMEN LVM (RESIZE / EXTEND)"
 
     if [ -z "$target_input" ]; then
-        read -p "Ingresa el nombre o ruta del servicio LVM a redimensionar: " target_input
+        if cargar_contexto >/dev/null 2>&1; then
+            target_input="$CTX_MOUNT_POINT"
+            msg_info "Usando objetivo activo del Workspace: $CTX_SERVICE_NAME ($target_input)"
+        else
+            read -p "Ingresa el nombre o ruta del servicio LVM a redimensionar: " target_input
+        fi
     fi
 
     local ruta_actual=""
@@ -193,7 +208,12 @@ crear_subcarpeta() {
     msg_section "CREAR SUBCARPETA CON HERENCIA DE POLÍTICAS"
 
     if [ -z "$target_input" ]; then
-        read -p "Ingresa el nombre o ruta del servicio principal: " target_input
+        if cargar_contexto >/dev/null 2>&1; then
+            target_input="$CTX_MOUNT_POINT"
+            msg_info "Usando objetivo activo del Workspace: $CTX_SERVICE_NAME ($target_input)"
+        else
+            read -p "Ingresa el nombre o ruta del servicio principal: " target_input
+        fi
     fi
 
     local ruta_actual=""

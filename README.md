@@ -1,6 +1,8 @@
-# VGUARD (Volume Guard & Infrastructure Policy Engine)
+# VGUARD v2.0 (Volume Guard & Infrastructure Policy Engine)
 
-VGUARD is a modular, declarative CLI automation tool designed to enforce, audit, and maintain storage, volume allocation, POSIX permissions, and SELinux security contexts on Linux server environments (Fedora Server / RHEL family).
+VGUARD v2.0 is a modular, declarative, stateful CLI automation tool designed to enforce, audit, and maintain storage, volume allocation, POSIX permissions, and SELinux security contexts on Linux server environments (Fedora Server / RHEL family).
+
+VGUARD v2.0 introduces a **Stateful Workspace Context** architecture (`vguard select`, `vguard selected`), allowing administrators to lock onto an active storage volume and execute operational tasks without re-typing target paths.
 
 This tool is specifically engineered to enforce and maintain the infrastructure policies established in the [ServerInfraestructureDockers](https://gitlab.com/sowtarez/ServerInfraestructureDockers) specification.
 
@@ -29,6 +31,25 @@ VGUARD operates as an automated policy engine for host storage and containerized
 - **Prohibition of Anonymous Volumes:** All Podman/Docker containers must use explicit bind mounts targeting host paths. Managed volumes under `/var/lib/containers/storage/volumes/` are strictly prohibited.
 - **SELinux Enforcement:** Target paths must be labeled with appropriate security contexts (`container_file_t` for container storage, `samba_share_t` for SMB/NFS network shares).
 - **Network Ingress:** Microservices communicate via an isolated external bridge network (`frontend_proxy`). Application ports are not exposed to the host network interface unless explicitly required for fixed infrastructure (e.g., DNS or SSH).
+
+---
+
+## Stateful Workspace Architecture (`/run/vguard/context.json`)
+
+VGUARD v2.0 manages active session context stored in `/run/vguard/context.json` (or user fallback `~/.config/vguard/context.json`).
+
+```json
+{
+  "service_name": "redis_prod",
+  "tier": "lvm_nvme_fast",
+  "mount_point": "/mnt/nvme_fast/redis_prod",
+  "lv_path": "/dev/fedora_server/redis_prod_data",
+  "owner": "vsynlo:vsynlo",
+  "posix": "770",
+  "selinux": "container_file_t",
+  "selected_at": "2026-07-25T23:55:00Z"
+}
+```
 
 ---
 
@@ -110,7 +131,7 @@ VGUARD_CREATED_AT="2026-07-25T22:00:00-06:00"
 Execute the installer script to symlink the executable and create policy files:
 
 ```bash
-git clone https://github.com/sowtarez/vguard.git
+git clone https://github.com/tu-usuario/vguard.git
 cd vguard
 chmod +x install.sh
 sudo ./install.sh
@@ -118,41 +139,40 @@ sudo ./install.sh
 
 ### CLI Command Summary
 
-| Command | Description |
-| :--- | :--- |
-| `vguard` | Launches the interactive wizard menu. |
-| `vguard init` | Initializes default configuration in `/etc/vguard/vguard.conf`. |
-| `vguard create [tier] [name] [size]` | Provisions new storage folders or LVM Logical Volumes. |
-| `vguard status` | Scans all managed volumes and displays health status and disk usage. |
-| `vguard audit <path>` | Evaluates permission drift against `.vguard_meta` without modifying files. |
-| `vguard heal <path>` | **Self-Healing:** Enforces declared ownership, POSIX permissions, and SELinux contexts. |
-| `vguard rename <target> <new_name>` | **Service Rename:** Renames directory, LVM LV, fstab entries, and `.vguard_meta`. |
-| `vguard resize <target> <size>` | **Hot-Extend:** Extends NVMe LVM logical volume and XFS filesystem in place. |
-| `vguard mkdir <target> <subfolder>` | **Inherited Subfolder:** Creates subdirectories inheriting parent policy & SELinux. |
-| `vguard remove <target>` | **Safe Removal:** Unmounts, removes fstab/LVM volumes and directories with double verification. |
-| `vguard snap <service> [size]` | Provisions a point-in-time LVM snapshot before container updates. |
-| `vguard snap-list` | Lists active LVM snapshots in the Volume Group. |
-| `vguard rollback <snap_name>` | Merges an LVM snapshot to revert data volume state. |
-| `vguard update` | **Self-Update:** Pulls latest code from Git and updates symlinks and configuration. |
-| `vguard uninstall` | **Uninstaller:** Removes VGUARD executable symlinks and optional config files. |
+| Category | Command | Description |
+| :--- | :--- | :--- |
+| **Context** | `vguard select [<tier>] <volume>` | Marks a managed storage volume as the active workspace target. |
+| **Context** | `vguard context` \| `vguard selected` | Displays active workspace details, disk usage, SELinux, and health. |
+| **Context** | `vguard unselect` \| `vguard clear` | Clears active workspace context. |
+| **Selected** | `vguard selected status` | Audits and prints full status for the currently active target. |
+| **Selected** | `vguard selected resize <size>` | Hot-extends LVM volume and XFS filesystem of active target. |
+| **Selected** | `vguard selected rename <new_name>` | Renames directory, LVM LV, fstab, and metadata of active target. |
+| **Selected** | `vguard selected heal` | Enforces declared ownership, POSIX permissions, and SELinux on active target. |
+| **Selected** | `vguard selected audit` | Evaluates permission drift on active target without altering files. |
+| **Selected** | `vguard selected snap [size]` | Provisions point-in-time LVM snapshot for active target. |
+| **Selected** | `vguard selected mkdir <subfolder>` | Creates subfolder inheriting parent policy on active target. |
+| **Selected** | `vguard selected delete` | Safe removal of active target with double verification. |
+| **Global** | `vguard list` \| `vguard ls` \| `vguard status` | Lists all managed volumes, highlighting `[ACTIVE]` volume. |
+| `Global` | `vguard create <tier> <name> [size]` | Provisions new volume and automatically marks it as active target. |
+| `Global` | `vguard heal-all` | Audits and heals all managed storage volumes system-wide. |
+| `Global` | `vguard update` | Self-updates VGUARD codebase via Git pull and reinstalls links. |
+| `Global` | `vguard uninstall` | Launches VGUARD uninstaller. |
 
 ---
 
-## Operational Workflows
+## Example v2.0 Stateful Workflow
 
-### Provisioning Fast NVMe Storage for Databases
 ```bash
-sudo vguard create lvm_nvme_fast mysql_prod 10G
-```
-*Creates `/dev/fedora_server/mysql_prod_data`, formats with XFS, registers `/etc/fstab`, mounts to `/mnt/nvme_fast/mysql_prod`, applies `container_file_t` SELinux context, sets ownership `vsynlo:vsynlo`, and writes `.vguard_meta`.*
+# 1. Select active volume context
+sudo vguard select nvme_fast redis_prod
 
-### Auditing and Repairing Permission Drift
-```bash
-vguard audit /mnt/sda1/servicios/gitea
-vguard heal /mnt/sda1/servicios/gitea
+# 2. Inspect active target status
+sudo vguard selected status
+
+# 3. Hot-extend active volume by +10G
+sudo vguard selected resize +10G
+
+# 4. Heal permissions and SELinux on active volume
+sudo vguard selected heal
 ```
 
-### Creating LVM Snapshots Before Schema Migrations
-```bash
-sudo vguard snap mysql_prod 5G
-```

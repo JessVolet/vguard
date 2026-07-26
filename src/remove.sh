@@ -9,7 +9,12 @@ remover_almacenamiento() {
     msg_section "ELIMINACIÓN SEGURA DE ALMACENAMIENTO (REMOVE)"
 
     if [ -z "$target_input" ]; then
-        read -p "Ingresa la ruta absoluta o el nombre del servicio a eliminar: " target_input
+        if cargar_contexto >/dev/null 2>&1; then
+            target_input="$CTX_MOUNT_POINT"
+            msg_info "Usando objetivo activo del Workspace: $CTX_SERVICE_NAME ($target_input)"
+        else
+            read -p "Ingresa la ruta absoluta o el nombre del servicio a eliminar: " target_input
+        fi
     fi
 
     if [ -z "$target_input" ]; then
@@ -111,6 +116,9 @@ remover_almacenamiento() {
     if rm -rf "$ruta_target"; then
         draw_separator
         msg_success "Almacenamiento y datos eliminados correctamente de: $ruta_target"
+        if cargar_contexto >/dev/null 2>&1 && [ "$CTX_MOUNT_POINT" = "$ruta_target" ]; then
+            limpiar_contexto >/dev/null 2>&1 || true
+        fi
         draw_separator
     else
         msg_error "Error al eliminar el directorio $ruta_target"
