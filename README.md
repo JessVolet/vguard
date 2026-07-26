@@ -110,7 +110,7 @@ VGUARD_CREATED_AT="2026-07-25T22:00:00-06:00"
 Execute the installer script to symlink the executable and create policy files:
 
 ```bash
-git clone https://github.com/tu-usuario/vguard.git
+git clone https://github.com/sowtarez/vguard.git
 cd vguard
 chmod +x install.sh
 sudo ./install.sh
