@@ -1,0 +1,28 @@
+# ==============================================================================
+# VGUARD - ARCHIVO DE CONFIGURACIÓN DE POLÍTICAS DE ALMACENAMIENTO
+# ==============================================================================
+
+# Grupo de Volúmenes LVM (LVM Volume Group)
+VG_NAME="fedora_server"
+
+# Rutas Base de la Infraestructura
+PATH_HDD_SERVICIOS="/mnt/sda1/servicios"
+PATH_HDD_COMPARTIDO="/mnt/sda1/compartido"
+PATH_HDD_SISTEMA="/mnt/sda1/sistema"
+PATH_NVME_FAST="/mnt/nvme_fast"
+
+# Propietario y Grupo Predeterminado (usuario:grupo)
+VGUARD_OWNER="vsynlo:vsynlo"
+
+# Archivo de Metadatos Oculto
+META_FILE=".vguard_meta"
+
+# Contextos SELinux Predeterminados
+SELINUX_CONTAINER="container_file_t"
+SELINUX_NETWORK="samba_share_t"
+SELINUX_SYSTEM="systemd_system_unit_t"
+
+# Permisos POSIX Predeterminados
+PERM_POSIX_CONTAINER="770"
+PERM_POSIX_NETWORK="775"
+PERM_POSIX_SYSTEM="750"

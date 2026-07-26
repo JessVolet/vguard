@@ -1,0 +1,121 @@
+#!/bin/bash
+# ==============================================================================
+# VGUARD - GUARDIA DE ALMACENAMIENTO Y INFRAESTRUCTURA DE SERVIDOR
+# ==============================================================================
+
+set -e
+
+# Determinar directorio raíz del script para importar módulos
+SCRIPT_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+
+# Importar Módulos Core
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/ui.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/config.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/create.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/heal.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/status.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/snap.sh"
+
+mostrar_ayuda() {
+    print_banner
+    echo -e "${CLR_BOLD}USO:${CLR_RESET}"
+    echo "  vguard <comando> [opciones]"
+    echo ""
+    echo -e "${CLR_BOLD}COMANDOS DISPONIBLES:${CLR_RESET}"
+    echo "  init                       Inicializa la configuración base (/etc/vguard/vguard.conf)"
+    echo "  create [tier] [nombre]     Crea un nuevo volumen o carpeta asegurada"
+    echo "  heal | repair <ruta>       Restaura y plancha los permisos/SELinux según el estado declarativo"
+    echo "  audit <ruta>               Audita las desviaciones de permisos de una carpeta sin modificarlos"
+    echo "  status | list | ls         Lista todos los volúmenes gestionados y evalúa su salud"
+    echo "  snap [servicio] [tamaño]   Crea un snapshot LVM instantáneo de un volumen NVMe"
+    echo "  snap-list                  Lista los snapshots LVM activos"
+    echo "  rollback [snap_nombre]     Restaura un snapshot LVM previo"
+    echo "  help | --help | -h         Muestra este menú de ayuda"
+    echo ""
+    echo -e "${CLR_BOLD}EJEMPLOS DE USO:${CLR_RESET}"
+    echo "  vguard create"
+    echo "  vguard create lvm_nvme_fast redis_prod 10G"
+    echo "  vguard create contenedor_hdd uptime_kuma"
+    echo "  vguard heal /mnt/sda1/servicios/uptime_kuma"
+    echo "  vguard status"
+    echo "  vguard snap redis_prod 5G"
+    echo ""
+}
+
+main() {
+    local comando="${1:-menu}"
+
+    case "$comando" in
+        init)
+            init_config
+            ;;
+        create)
+            load_config
+            crear_almacenamiento "$2" "$3" "$4"
+            ;;
+        heal|repair)
+            load_config
+            reparar_almacenamiento "$2"
+            ;;
+        audit)
+            load_config
+            if [ -z "$2" ]; then
+                msg_error "Especifica la ruta a auditar (ej. vguard audit /mnt/sda1/servicios/gitea)"
+                exit 1
+            fi
+            auditar_y_reparar_directorio "$2" "true"
+            ;;
+        status|list|ls)
+            load_config
+            listar_volumenes_gestionados
+            ;;
+        snap)
+            load_config
+            crear_snapshot "$2" "$3"
+            ;;
+        snap-list|snaps)
+            load_config
+            listar_snapshots
+            ;;
+        rollback)
+            load_config
+            revertir_snapshot "$2"
+            ;;
+        help|--help|-h)
+            mostrar_ayuda
+            ;;
+        menu)
+            print_banner
+            load_config
+            msg_info "Menú Interactivo Principal"
+            echo "1) Crear nuevo volumen o carpeta de servicio"
+            echo "2) Auditar y reparar permisos de una carpeta existente"
+            echo "3) Ver estado global de almacenamiento y permisos"
+            echo "4) Crear Snapshot LVM de emergencia"
+            echo "5) Salir"
+            read -p "Selecciona una acción (1-5): " opcion_menu
+
+            case "$opcion_menu" in
+                1) crear_almacenamiento ;;
+                2) reparar_almacenamiento ;;
+                3) listar_volumenes_gestionados ;;
+                4) crear_snapshot ;;
+                5) exit 0 ;;
+                *) msg_error "Opción inválida."; exit 1 ;;
+            esac
+            ;;
+        *)
+            msg_error "Comando '$comando' desconocido."
+            mostrar_ayuda
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
