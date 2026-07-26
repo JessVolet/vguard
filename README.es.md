@@ -134,6 +134,7 @@ sudo ./install.sh
 | `vguard snap-list` | Lista los snapshots LVM activos en el Volume Group. |
 | `vguard rollback <snap_nombre>` | Fusiona un snapshot LVM para revertir el estado del volumen de datos. |
 | `vguard update` | **Auto-Actualización:** Ejecuta `git pull` y actualiza binarios y plantillas del sistema. |
+| `vguard uninstall` | **Desinstalador:** Remueve el ejecutable VGUARD del sistema y limpia configuraciones. |
 
 ---
 

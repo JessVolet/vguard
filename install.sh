@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# VGUARD - SCRIPT DE INSTALACIÓN Y CONFIGURACIÓN GLOBAL
+# VGUARD - SCRIPT DE INSTALACIÓN Y ACTUALIZACIÓN GLOBAL
 # ==============================================================================
 
 set -e
@@ -8,10 +8,10 @@ set -e
 SCRIPT_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
 echo "========================================================"
-echo "           INSTALADOR DE VGUARD-S (v1.0)"
+echo "         INSTALADOR / ACTUALIZADOR DE VGUARD-S (v1.0)"
 echo "========================================================"
 
-# Verificar donde instalar el ejecutable
+# Determinar rutas de instalación
 if [ "$EUID" -eq 0 ]; then
     INSTALL_BIN="/usr/local/bin/vguard"
     CONFIG_DIR="/etc/vguard"
@@ -21,24 +21,33 @@ else
     mkdir -p "$HOME/.local/bin"
 fi
 
-echo "[*] Instalando ejecutable vguard en: $INSTALL_BIN"
-ln -sf "$SCRIPT_DIR/vguard" "$INSTALL_BIN"
-chmod +x "$SCRIPT_DIR/vguard"
+# Detectar instalación previa
+if [ -f "$INSTALL_BIN" ] || [ -L "$INSTALL_BIN" ]; then
+    echo "[*] Detectada instalación previa de VGUARD en: $INSTALL_BIN"
+    echo "[*] Actualizando ejecutable y renovando enlace simbólico..."
+    rm -f "$INSTALL_BIN"
+else
+    echo "[*] Instalando VGUARD por primera vez en: $INSTALL_BIN"
+fi
 
-echo "[*] Preparando directorio de configuración en: $CONFIG_DIR"
+chmod +x "$SCRIPT_DIR/vguard"
+ln -sf "$SCRIPT_DIR/vguard" "$INSTALL_BIN"
+
+# Preparar y verificar configuración
+echo "[*] Verificando directorio de configuración en: $CONFIG_DIR"
 mkdir -p "$CONFIG_DIR"
 
 if [ ! -f "$CONFIG_DIR/vguard.conf" ]; then
     echo "[+] Copiando plantilla inicial vguard.conf..."
     cp "$SCRIPT_DIR/config/vguard.conf.example" "$CONFIG_DIR/vguard.conf"
 else
-    echo "[!] El archivo $CONFIG_DIR/vguard.conf ya existe. Preservando archivo actual."
+    echo "[*] El archivo de configuración $CONFIG_DIR/vguard.conf ya existe. Se mantendrá tu configuración actual."
 fi
 
 echo "========================================================"
-echo "[OK] Instalación completada con éxito."
-echo "   - Comando: vguard"
+echo "[OK] Instalación / Actualización completada con éxito."
+echo "   - Ejecutable: $INSTALL_BIN"
 echo "   - Configuración: $CONFIG_DIR/vguard.conf"
 echo ""
-echo "Ejecuta 'vguard --help' o 'vguard' para empezar a usarlo."
+echo "Ejecuta 'vguard --help' o 'vguard' para verificar el sistema."
 echo "========================================================"

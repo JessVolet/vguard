@@ -48,6 +48,7 @@ mostrar_ayuda() {
     echo "  snap-list                       Lista los snapshots LVM activos"
     echo "  rollback [snap_nombre]          Restaura un snapshot LVM previo"
     echo "  update                          Actualiza VGUARD vía Git pull y re-instala ejecutable"
+    echo "  uninstall                       Ejecuta el asistente de desinstalación de VGUARD"
     echo "  help | --help | -h              Muestra este menú de ayuda"
     echo ""
     echo -e "${CLR_BOLD}EJEMPLOS DE USO:${CLR_RESET}"
@@ -123,6 +124,14 @@ main() {
         update|self-update)
             actualizar_vguard
             ;;
+        uninstall)
+            if [ -f "$SCRIPT_DIR/uninstall.sh" ]; then
+                bash "$SCRIPT_DIR/uninstall.sh"
+            else
+                msg_error "No se encontró el script uninstall.sh"
+                exit 1
+            fi
+            ;;
         help|--help|-h)
             mostrar_ayuda
             ;;
@@ -137,8 +146,9 @@ main() {
             echo "5) Eliminar servicio o volumen gestionado (Doble confirmación)"
             echo "6) Crear Snapshot LVM de emergencia"
             echo "7) Actualizar VGUARD (git pull)"
-            echo "8) Salir"
-            read -p "Selecciona una acción (1-8): " opcion_menu
+            echo "8) Desinstalar VGUARD"
+            echo "9) Salir"
+            read -p "Selecciona una acción (1-9): " opcion_menu
 
             case "$opcion_menu" in
                 1) crear_almacenamiento ;;
@@ -148,7 +158,8 @@ main() {
                 5) remover_almacenamiento ;;
                 6) crear_snapshot ;;
                 7) actualizar_vguard ;;
-                8) exit 0 ;;
+                8) bash "$SCRIPT_DIR/uninstall.sh" ;;
+                9) exit 0 ;;
                 *) msg_error "Opción inválida."; exit 1 ;;
             esac
             ;;
