@@ -1,7 +1,64 @@
 #!/bin/bash
 # ==============================================================================
-# VGUARD - MÓDULO DE AUDITORÍA Y AUTO-REPARACIÓN (SELF-HEALING)
+# VGUARD v3.0 - MÓDULO DE AUDITORÍA READ-ONLY Y REPARACIÓN PER-VOLUMEN (HEAL)
 # ==============================================================================
+
+aplicar_permisos_recursivos_por_politica() {
+    local ruta_root="$1"
+    local vol_name="$2"
+
+    msg_info "Obteniendo política declarativa personalizada para $vol_name..."
+    obtener_politica_volumen "$vol_name" ""
+
+    local target_owner="$POL_OWNER:$POL_GROUP"
+    local target_mode_dir="$POL_MODE_DIR"
+    local target_mode_file="$POL_MODE_FILE"
+    local target_selinux="$POL_SELINUX"
+
+    msg_info "Aplicando propietario ($target_owner) a $ruta_root..."
+    chown -R "$target_owner" "$ruta_root" || msg_warning "No se pudo cambiar propietario a $target_owner (¿requiere sudo?)"
+
+    msg_info "Aplicando permisos POSIX a directorios ($target_mode_dir) y archivos ($target_mode_file)..."
+    find "$ruta_root" -type d -exec chmod "$target_mode_dir" {} + 2>/dev/null || chmod -R "$target_mode_dir" "$ruta_root"
+    find "$ruta_root" -type f ! -name "$META_FILE" -exec chmod "$target_mode_file" {} + 2>/dev/null || true
+
+    # Si hay políticas de subcarpetas personalizadas declaradas
+    python3 - "$CONFIG_FILE" "$vol_name" "$ruta_root" << 'EOF' 2>/dev/null || true
+import os
+import sys
+import subprocess
+from policy_helper import load_json_config
+
+config_file = sys.argv[1]
+vol_name = sys.argv[2]
+root_path = sys.argv[3]
+
+data = load_json_config(config_file)
+vol_dict = data.get("managed_volumes", {}).get(vol_name, {})
+sub_policies = vol_dict.get("subfolder_policies", {})
+
+for rel_sub, pol in sub_policies.items():
+    sub_abs = os.path.join(root_path, rel_sub.strip("/"))
+    if os.path.exists(sub_abs):
+        owner = f"{pol.get('owner', '1000')}:{pol.get('group', '1000')}"
+        mode_dir = pol.get("mode_dir", "0775")
+        mode_file = pol.get("mode_file", "0664")
+        subprocess.run(["chown", "-R", owner, sub_abs], stderr=subprocess.DEVNULL)
+        subprocess.run(["chmod", mode_dir, sub_abs], stderr=subprocess.DEVNULL)
+        subprocess.run(["find", sub_abs, "-type", "f", "-exec", "chmod", mode_file, "{}", "+"], stderr=subprocess.DEVNULL)
+EOF
+
+    # Aplicar contexto SELinux
+    if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
+        msg_info "Aplicando contexto SELinux ($target_selinux) a $ruta_root..."
+        if command -v semanage >/dev/null 2>&1; then
+            semanage fcontext -a -t "$target_selinux" "$ruta_root(/.*)?" 2>/dev/null || true
+        fi
+        if command -v restorecon >/dev/null 2>&1; then
+            restorecon -R -v "$ruta_root" >/dev/null 2>&1 || true
+        fi
+    fi
+}
 
 auditar_y_reparar_directorio() {
     local ruta_target="$1"
@@ -12,57 +69,41 @@ auditar_y_reparar_directorio() {
         return 1
     fi
 
-    local meta_path="$ruta_target/$META_FILE"
+    local vol_name
+    vol_name="$(basename "$ruta_target")"
 
-    if [ ! -f "$meta_path" ]; then
-        msg_warning "No se encontró el archivo de metadatos ($META_FILE) en: $ruta_target"
-        msg_info "Esta carpeta no es gestionada por VGUARD o el archivo de metadatos fue eliminado."
-        return 1
+    # Obtener política declarativa per-volumen desde vguard.conf o .vguard_meta
+    obtener_politica_volumen "$vol_name" ""
+
+    local meta_path="$ruta_target/$META_FILE"
+    if [ -f "$meta_path" ]; then
+        VGUARD_OWNER=""
+        VGUARD_POSIX=""
+        VGUARD_SELINUX=""
+        # shellcheck source=/dev/null
+        source "$meta_path" 2>/dev/null
+        if [ -n "$VGUARD_OWNER" ]; then POL_OWNER="${VGUARD_OWNER%%:*}"; POL_GROUP="${VGUARD_OWNER#*:}"; fi
+        if [ -n "$VGUARD_POSIX" ]; then POL_MODE_DIR="$VGUARD_POSIX"; fi
+        if [ -n "$VGUARD_SELINUX" ]; then POL_SELINUX="$VGUARD_SELINUX"; fi
     fi
 
-    # Cargar metadatos declarativos del directorio
-    # Limpiar variables previas por seguridad
-    VGUARD_SERVICE_NAME=""
-    VGUARD_TIER=""
-    VGUARD_OWNER=""
-    VGUARD_POSIX=""
-    VGUARD_SELINUX=""
-
-    # Compatibilidad con variables antiguas (.storage_meta.env)
-    OWNER_CORRECTO=""
-    PERMISO_POSIX=""
-    CONTEXTO_SELINUX=""
-
-    # shellcheck source=/dev/null
-    source "$meta_path"
-
-    # Mapear compatibilidad si proviene de versión legacy
-    local target_owner="${VGUARD_OWNER:-$OWNER_CORRECTO}"
-    local target_posix="${VGUARD_POSIX:-$PERMISO_POSIX}"
-    local target_selinux="${VGUARD_SELINUX:-$CONTEXTO_SELINUX}"
-    local target_tier="${VGUARD_TIER:-$TIPO_USO}"
-    local target_service="${VGUARD_SERVICE_NAME:-$(basename "$ruta_target")}"
+    local target_owner="$POL_OWNER:$POL_GROUP"
+    local target_posix="$POL_MODE_DIR"
+    local target_selinux="$POL_SELINUX"
 
     draw_separator
-    msg_info "Evaluando estado declarativo para: ${CLR_BOLD}$target_service${CLR_RESET}"
+    msg_info "Evaluando estado declarativo para: ${CLR_BOLD}$vol_name${CLR_RESET}"
     msg_info "Ruta: $ruta_target"
-    msg_info "Perfil: [$target_tier]"
-    msg_info "Estado Deseado:"
+    msg_info "Política Declarativa Per-Volumen:"
     echo "  - Propietario: $target_owner"
-    echo "  - Permisos POSIX: $target_posix"
+    echo "  - Permisos POSIX Directorio: $target_posix"
     echo "  - Contexto SELinux: $target_selinux"
 
+    # PILLAR 1: LECTURA PURA (Read-Only) al auditar
     if [ "$solo_auditar" = "true" ]; then
-        # Verificar propietario actual
-        local current_owner
+        local current_owner current_posix current_selinux
         current_owner=$(stat -c '%U:%G' "$ruta_target" 2>/dev/null || echo "Desconocido")
-        
-        # Verificar permisos POSIX actuales
-        local current_posix
         current_posix=$(stat -c '%a' "$ruta_target" 2>/dev/null || echo "Desconocido")
-
-        # Verificar contexto SELinux actual
-        local current_selinux
         current_selinux=$(ls -Zd "$ruta_target" 2>/dev/null | awk '{print $1}' | cut -d: -f3 || echo "Desconocido")
 
         local tiene_desviacion=false
@@ -90,25 +131,27 @@ auditar_y_reparar_directorio() {
             fi
         fi
 
+        msg_info "Modo de Auditoría 100% LECTURA (Read-Only). Ningún permiso fue alterado."
         if [ "$tiene_desviacion" = "true" ]; then
-            msg_warning "Se detectaron desviaciones de permisos. Ejecuta 'vguard heal $ruta_target' para restaurar."
+            msg_warning "Se detectaron desviaciones. Ejecuta 'vguard heal $ruta_target' para restaurar intencionalmente."
         else
-            msg_success "El estado del volumen está alineado al 100% con las políticas."
+            msg_success "El estado del volumen está alineado al 100% con su política."
         fi
         return 0
     fi
 
-    # Ejecutar restauración / sanación
-    msg_section "EJECUTANDO REPARACIÓN DE ESTADO (SELF-HEALING)"
-    aplicar_permisos "$ruta_target" "$target_owner" "$target_posix" "$target_selinux"
+    # PILLAR 1: ESCRITURA EXPLÍCITA solo al ejecutar 'vguard heal'
+    msg_section "EJECUTANDO REPARACIÓN DE ESTADO PER-VOLUMEN (AUTO-HEAL EXPLÍCITO)"
+    aplicar_permisos_recursivos_por_politica "$ruta_target" "$vol_name"
 
-    # Re-proteger metadatos
-    chmod 600 "$meta_path"
-    if [ "$EUID" -eq 0 ]; then
-        chown root:root "$meta_path"
+    if [ -f "$meta_path" ]; then
+        chmod 600 "$meta_path" 2>/dev/null || true
+        if [ "$EUID" -eq 0 ]; then
+            chown root:root "$meta_path" 2>/dev/null || true
+        fi
     fi
 
-    msg_success "Reparación completada. Permisos y contextos SELinux restaurados correctamente."
+    msg_success "Reparación completada. Permisos y contextos SELinux restaurados según la política per-volumen."
 }
 
 reparar_almacenamiento() {

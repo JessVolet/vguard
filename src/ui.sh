@@ -47,7 +47,7 @@ print_banner() {
     echo "  ╚██╗ ██╔╝██║   ██║██║  ██║██╔══██║██╔══██╗██║  ██║"
     echo "   ╚████╔╝ ╚██████╔╝╚█████╔╝██║  ██║██║  ██║██████╔╝"
     echo "    ╚═══╝   ╚═════╝  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ "
-    echo -e "         ${CLR_DIM}Guardia & Gestión de Almacenamiento v2.0 (Stateful Workspace)${CLR_RESET}\n"
+    echo -e "         ${CLR_DIM}Guardia & Gestión de Almacenamiento v3.0 (TUI & Per-Volume Policies)${CLR_RESET}\n"
 }
 
 msg_info() {

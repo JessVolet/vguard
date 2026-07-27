@@ -1,0 +1,9 @@
+{
+  "name": "share",
+  "owner": "vsynlo",
+  "group": "vsynlo",
+  "mode_dir": "2775",
+  "mode_file": "0664",
+  "selinux_context": "samba_share_t",
+  "allow_subfolder_overrides": true
+}

@@ -34,14 +34,18 @@ chmod +x "$SCRIPT_DIR/vguard"
 ln -sf "$SCRIPT_DIR/vguard" "$INSTALL_BIN"
 
 # Preparar y verificar configuración
-echo "[*] Verificando directorio de configuración en: $CONFIG_DIR"
-mkdir -p "$CONFIG_DIR"
+echo "[*] Verificando directorio de configuración y políticas en: $CONFIG_DIR"
+mkdir -p "$CONFIG_DIR/policies"
 
 if [ ! -f "$CONFIG_DIR/vguard.conf" ]; then
-    echo "[+] Copiando plantilla inicial vguard.conf..."
+    echo "[+] Copiando plantilla inicial vguard.conf v3.0..."
     cp "$SCRIPT_DIR/config/vguard.conf.example" "$CONFIG_DIR/vguard.conf"
 else
     echo "[*] El archivo de configuración $CONFIG_DIR/vguard.conf ya existe. Se mantendrá tu configuración actual."
+fi
+
+if [ -d "$SCRIPT_DIR/config/policies" ]; then
+    cp -r "$SCRIPT_DIR/config/policies"/* "$CONFIG_DIR/policies/" 2>/dev/null || true
 fi
 
 echo "========================================================"

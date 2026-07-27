@@ -1,178 +1,118 @@
-# VGUARD v2.0 (Volume Guard & Infrastructure Policy Engine)
+# VGUARD v3.0 (Volume Guard & Infrastructure Policy Engine)
 
-VGUARD v2.0 is a modular, declarative, stateful CLI automation tool designed to enforce, audit, and maintain storage, volume allocation, POSIX permissions, and SELinux security contexts on Linux server environments (Fedora Server / RHEL family).
-
-VGUARD v2.0 introduces a **Stateful Workspace Context** architecture (`vguard select`, `vguard selected`), allowing administrators to lock onto an active storage volume and execute operational tasks without re-typing target paths.
-
-This tool is specifically engineered to enforce and maintain the infrastructure policies established in the [ServerInfraestructureDockers](https://gitlab.com/sowtarez/ServerInfraestructureDockers) specification.
+VGUARD v3.0 is a modular, declarative, stateful CLI and TUI automation tool designed to enforce, audit, and maintain storage, volume allocation, custom per-volume POSIX policies, and SELinux security contexts on Linux server environments (Fedora Server / RHEL family).
 
 Language translations:
 - [Spanish Documentation (README.es.md)](file:///home/vsynlo/Proyectos/Self/vguard/README.es.md)
 
 ---
 
-## Infrastructure Overview and Policies
+## The 4 Pillars of VGUARD v3.0 Architecture
 
-VGUARD operates as an automated policy engine for host storage and containerized workloads running on Fedora Server (Lenovo ThinkCentre M920s architecture).
+### 1. Strict Decoupling of Read & Write Operations (Read-Only Audit vs. Explicit Auto-Heal)
+- **100% Read-Only Operations:** Commands like `vguard status`, `vguard list`, `vguard context`, `vguard audit`, and `vguard selected tree` read file system attributes, mounted status, disk usage, and permission drift. They **never** execute `chmod`, `chown`, or `restorecon` in the background.
+- **Explicit Write Operations:** Commands like `vguard heal`, `vguard selected heal`, and `vguard heal-all` perform state restoration only when explicitly invoked by the administrator.
 
-### 1. Storage Topology & Hybrid Tiering
-
-- **High-IOPS Tier (NVMe SSD):**
-  - Logical Volume `fedora_server-root` (15 GiB, XFS): Isolated operating system and system packages.
-  - Logical Volume `fedora_server-containers` (50 GiB, XFS): Dedicated to `/var/lib/containers` for container image layers and ephemeral states.
-  - Unallocated Volume Group Reserve (`fedora_server`, ~409 GiB): Retained for Just-In-Time (JIT) dynamic allocation of independent Logical Volumes (`vguard create lvm_nvme_fast`) dedicated to relational databases (MySQL, PostgreSQL, Redis).
-
-- **High-Capacity Tier (SATA HDD):**
-  - Partition `/dev/sda1` mounted at `/mnt/sda1` (ext4): Reserved for mass storage workloads, cold backups, Git repositories (Gitea), and WebDAV user file stores.
-  - Strict directory segregation: `/mnt/sda1/servicios/`, `/mnt/sda1/compartido/`, `/mnt/sda1/sistema/`.
-
-### 2. Containerization and Security Rules
-
-- **Prohibition of Anonymous Volumes:** All Podman/Docker containers must use explicit bind mounts targeting host paths. Managed volumes under `/var/lib/containers/storage/volumes/` are strictly prohibited.
-- **SELinux Enforcement:** Target paths must be labeled with appropriate security contexts (`container_file_t` for container storage, `samba_share_t` for SMB/NFS network shares).
-- **Network Ingress:** Microservices communicate via an isolated external bridge network (`frontend_proxy`). Application ports are not exposed to the host network interface unless explicitly required for fixed infrastructure (e.g., DNS or SSH).
-
----
-
-## Stateful Workspace Architecture (`/run/vguard/context.json`)
-
-VGUARD v2.0 manages active session context stored in `/run/vguard/context.json` (or user fallback `~/.config/vguard/context.json`).
+### 2. Custom Per-Volume & Subfolder Policy Engine (`vguard.conf` & `.json` Policies)
+Instead of forcing static global permissions, VGUARD v3.0 allows declaring granular, custom per-volume and subfolder policies in `/etc/vguard/vguard.conf` (or `$HOME/.config/vguard/vguard.conf`):
 
 ```json
 {
-  "service_name": "redis_prod",
-  "tier": "lvm_nvme_fast",
-  "mount_point": "/mnt/nvme_fast/redis_prod",
-  "lv_path": "/dev/fedora_server/redis_prod_data",
-  "owner": "vsynlo:vsynlo",
-  "posix": "770",
-  "selinux": "container_file_t",
-  "selected_at": "2026-07-25T23:55:00Z"
+  "managed_volumes": {
+    "ocis_data": {
+      "tier": "contenedor_hdd",
+      "path": "/mnt/sda1/servicios/ocis_data",
+      "policy": {
+        "owner": "1000",
+        "group": "1000",
+        "mode_dir": "0775",
+        "mode_file": "0664",
+        "selinux_context": "container_file_t",
+        "allow_subfolder_overrides": true
+      },
+      "subfolder_policies": {
+        "onlyoffice/data": {
+          "owner": "1000",
+          "group": "1000",
+          "mode_dir": "0775",
+          "mode_file": "0664",
+          "selinux_context": "container_file_t"
+        }
+      }
+    },
+    "mysql": {
+      "tier": "lvm_nvme_fast",
+      "path": "/mnt/nvme_fast/mysql",
+      "policy": {
+        "owner": "27",
+        "group": "27",
+        "mode_dir": "0700",
+        "mode_file": "0600",
+        "selinux_context": "container_file_t",
+        "allow_subfolder_overrides": false
+      }
+    }
+  }
 }
 ```
 
----
+Predefined policy templates are available in `/etc/vguard/policies/` (`default.json`, `container.json`, `database.json`, `share.json`).
 
-## Repository Architecture
+### 3. Tree Inspection & Interactive TUI Explorer (`tree` & `explore`)
+- **ASCII Tree Inspection:** `vguard selected tree` renders an ASCII tree of nested subfolders displaying `[owner:group mode selinux]` attributes without altering files.
+- **Interactive TUI Explorer:** `vguard selected explore` launches an interactive terminal navigator powered by `whiptail` to browse nested directories, create subfolders, configure policies, and run Auto-Heal.
 
-```text
-vguard/
-├── README.md               # Main documentation (English)
-├── README.es.md            # Secondary documentation (Spanish)
-├── install.sh              # Global installer script (/usr/local/bin or ~/.local/bin)
-├── vguard                  # Main CLI entrypoint and command router
-├── config/
-│   └── vguard.conf.example # Default infrastructure policy configuration
-└── src/
-    ├── ui.sh               # Terminal formatting and output utilities
-    ├── config.sh           # Configuration loader and policy parser
-    ├── create.sh           # Volume allocation, LVM provisioning, and mounting
-    ├── heal.sh             # Audit engine and self-healing restoration
-    ├── status.sh           # Global inventory and permission drift inspection
-    └── snap.sh             # LVM snapshot lifecycle and rollback management
-```
+### 4. Stateful Session Context (`/run/vguard/context.json`)
+Lock onto an active target volume with `vguard select <volume>` and execute subsequent operations using `vguard selected <action>` without re-typing target paths.
 
 ---
 
-## Configuration (`vguard.conf`)
-
-Global system policies are declared in `/etc/vguard/vguard.conf` (or user fallback `~/.config/vguard/vguard.conf`):
-
-```bash
-# LVM Volume Group
-VG_NAME="fedora_server"
-
-# Infrastructure Mount Points
-PATH_HDD_SERVICIOS="/mnt/sda1/servicios"
-PATH_HDD_COMPARTIDO="/mnt/sda1/compartido"
-PATH_HDD_SISTEMA="/mnt/sda1/sistema"
-PATH_NVME_FAST="/mnt/nvme_fast"
-
-# Default Ownership and Metadata Tagging
-VGUARD_OWNER="vsynlo:vsynlo"
-META_FILE=".vguard_meta"
-
-# SELinux Policy Defaults
-SELINUX_CONTAINER="container_file_t"
-SELINUX_NETWORK="samba_share_t"
-SELINUX_SYSTEM="systemd_system_unit_t"
-
-# POSIX Permission Modes
-PERM_POSIX_CONTAINER="770"
-PERM_POSIX_NETWORK="775"
-PERM_POSIX_SYSTEM="750"
-```
-
----
-
-## Declarative Metadata (`.vguard_meta`)
-
-Upon creation, VGUARD injects a protected metadata file (`chmod 600 root:root`) into the root of the managed storage directory:
-
-```env
-# Declarative State Metadata - VGUARD
-VGUARD_VERSION="1.0"
-VGUARD_SERVICE_NAME="mysql_prod"
-VGUARD_TIER="lvm_nvme_fast"
-VGUARD_OWNER="vsynlo:vsynlo"
-VGUARD_POSIX="770"
-VGUARD_SELINUX="container_file_t"
-VGUARD_MOUNT_POINT="/mnt/nvme_fast/mysql_prod"
-VGUARD_LV_PATH="/dev/fedora_server/mysql_prod_data"
-VGUARD_CREATED_AT="2026-07-25T22:00:00-06:00"
-```
-
----
-
-## Installation and Command Reference
-
-### Installation
-
-Execute the installer script to symlink the executable and create policy files:
-
-```bash
-git clone https://github.com/tu-usuario/vguard.git
-cd vguard
-chmod +x install.sh
-sudo ./install.sh
-```
-
-### CLI Command Summary
+## CLI v3.0 Command Reference
 
 | Category | Command | Description |
 | :--- | :--- | :--- |
 | **Context** | `vguard select [<tier>] <volume>` | Marks a managed storage volume as the active workspace target. |
 | **Context** | `vguard context` \| `vguard selected` | Displays active workspace details, disk usage, SELinux, and health. |
 | **Context** | `vguard unselect` \| `vguard clear` | Clears active workspace context. |
-| **Selected** | `vguard selected status` | Audits and prints full status for the currently active target. |
+| **Selected** | `vguard selected status` | Audits active target status (100% Read-Only). |
+| **Selected** | `vguard selected tree` | Displays nested subfolder ASCII tree with attributes (Read-Only). |
+| **Selected** | `vguard selected explore` | Opens the interactive TUI directory explorer. |
+| **Selected** | `vguard selected mkdir <nested_path>` | Creates nested subdirectories inheriting policy (e.g. `onlyoffice/data/cache`). |
+| **Selected** | `vguard selected set-policy <subpath>` | Sets custom subfolder policy (`--owner 1000:1000 --mode 0775`). |
+| **Selected** | `vguard selected heal` | Explicitly restores POSIX permissions and SELinux on active target. |
+| **Selected** | `vguard selected audit` | Evaluates permission drift on active target (Read-Only). |
 | **Selected** | `vguard selected resize <size>` | Hot-extends LVM volume and XFS filesystem of active target. |
 | **Selected** | `vguard selected rename <new_name>` | Renames directory, LVM LV, fstab, and metadata of active target. |
-| **Selected** | `vguard selected heal` | Enforces declared ownership, POSIX permissions, and SELinux on active target. |
-| **Selected** | `vguard selected audit` | Evaluates permission drift on active target without altering files. |
 | **Selected** | `vguard selected snap [size]` | Provisions point-in-time LVM snapshot for active target. |
-| **Selected** | `vguard selected mkdir <subfolder>` | Creates subfolder inheriting parent policy on active target. |
 | **Selected** | `vguard selected delete` | Safe removal of active target with double verification. |
-| **Global** | `vguard list` \| `vguard ls` \| `vguard status` | Lists all managed volumes, highlighting `[ACTIVE]` volume. |
-| `Global` | `vguard create <tier> <name> [size]` | Provisions new volume and automatically marks it as active target. |
-| `Global` | `vguard heal-all` | Audits and heals all managed storage volumes system-wide. |
-| `Global` | `vguard update` | Self-updates VGUARD codebase via Git pull and reinstalls links. |
-| `Global` | `vguard uninstall` | Launches VGUARD uninstaller. |
+| **Global** | `vguard list` \| `vguard ls` \| `vguard status` | Lists all managed volumes (Read-Only), highlighting `[ACTIVE]` volume. |
+| **Global** | `vguard tree [<target>]` | Displays nested subfolder ASCII tree for any target (Read-Only). |
+| **Global** | `vguard explore [<target>]` | Opens TUI interactive explorer for any target. |
+| **Global** | `vguard create <tier> <name> [size]` | Provisions new volume and automatically marks it as active target. |
+| **Global** | `vguard heal-all` | Explicitly audits and heals all managed storage volumes system-wide. |
+| **Global** | `vguard update` | Self-updates VGUARD codebase via Git pull and reinstalls links. |
+| **Global** | `vguard uninstall` | Launches VGUARD uninstaller. |
 
 ---
 
-## Example v2.0 Stateful Workflow
+## Example v3.0 Operational Workflow
 
 ```bash
 # 1. Select active volume context
-sudo vguard select nvme_fast redis_prod
+vguard select ocis_data
 
-# 2. Inspect active target status
-sudo vguard selected status
+# 2. Inspect nested tree in 100% Read-Only mode
+vguard selected tree
 
-# 3. Hot-extend active volume by +10G
-sudo vguard selected resize +10G
+# 3. Create nested subfolder structure
+vguard selected mkdir onlyoffice/data/cache
 
-# 4. Heal permissions and SELinux on active volume
+# 4. Set custom subfolder policy
+vguard selected set-policy onlyoffice --owner 1000:1000 --mode 0775
+
+# 5. Explore subfolders interactively via TUI
+vguard selected explore
+
+# 6. Explicitly run Auto-Heal to enforce policies
 sudo vguard selected heal
 ```
-

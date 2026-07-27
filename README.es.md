@@ -1,100 +1,118 @@
-# VGUARD v2.0 (Guardia de Almacenamiento y Motor de Políticas de Infraestructura)
+# VGUARD v3.0 (Guardia de Almacenamiento y Motor de Políticas de Infraestructura)
 
-VGUARD v2.0 es una herramienta CLI de automatización modular, declarativa y con estado (**Stateful Workspace Context**) diseñada para aplicar, auditar y mantener las políticas de almacenamiento, asignación de volúmenes LVM, permisos POSIX y contextos de seguridad SELinux en entornos de servidor Linux (familia Fedora Server / RHEL).
-
-VGUARD v2.0 introduce una arquitectura de **Contexto de Sesión Activo** (`vguard select`, `vguard selected`), permitiendo a los administradores fijar un objetivo de volumen activo y ejecutar operaciones consecutivas sin necesidad de reescribir rutas o nombres en cada comando.
-
-Esta herramienta está diseñada específicamente para automatizar y hacer cumplir las políticas de infraestructura establecidas en la especificación [ServerInfraestructureDockers](https://gitlab.com/sowtarez/ServerInfraestructureDockers).
+VGUARD v3.0 es una herramienta de automatización modular, declarativa y con estado (**Stateful Workspace Context**) con soporte TUI (Interfaz de Usuario de Texto) e inspección en LECTURA PURA (Read-Only) diseñada para aplicar, auditar y mantener las políticas de almacenamiento, permisos POSIX personalizados por volumen/subcarpeta y contextos de seguridad SELinux en entornos de servidor Linux (familia Fedora Server / RHEL).
 
 Traducciones de documentación:
 - [Documentación en Inglés (README.md)](file:///home/vsynlo/Proyectos/Self/vguard/README.md)
 
 ---
 
-## Visión General de Infraestructura y Políticas
+## Los 4 Pilares de la Arquitectura VGUARD v3.0
 
-VGUARD actúa como un motor de políticas automatizado para el almacenamiento del host y las cargas de trabajo contenedorizadas ejecutadas en Fedora Server (arquitectura Lenovo ThinkCentre M920s).
+### 1. Desacoplamiento Estricto de Lectura y Escritura (Audit Read-Only vs. Auto-Heal Explícito)
+- **Operaciones 100% de Lectura (Read-Only):** Comandos como `vguard status`, `vguard list`, `vguard context`, `vguard audit` y `vguard selected tree` inspeccionan los atributos del sistema de archivos, montaje, uso en disco y desviaciones de seguridad. **Nunca** ejecutan `chmod`, `chown` o `restorecon` en segundo plano.
+- **Operaciones de Escritura Explícitas:** Comandos como `vguard heal`, `vguard selected heal` y `vguard heal-all` aplanan y restauran permisos únicamente cuando el administrador ejecuta explícitamente el comando de reparación.
 
-### 1. Topología de Almacenamiento y Capas Híbridas
-
-- **Capa de Alto Rendimiento / IOPS (NVMe SSD):**
-  - Volumen Lógico `fedora_server-root` (15 GiB, XFS): Sistema operativo e instalación base de paquetes aislados.
-  - Volumen Lógico `fedora_server-containers` (50 GiB, XFS): Dedicado a `/var/lib/containers` para capas de imágenes de contenedores y estados efímeros.
-  - Reserva en Volume Group (`fedora_server`, ~409 GiB): Espacio retenido para la asignación dinámica Just-In-Time (JIT) de Volúmenes Lógicos independientes (`vguard create lvm_nvme_fast`) dedicados a bases de datos relacionales (MySQL, PostgreSQL, Redis).
-
-- **Capa de Alta Capacidad (SATA HDD):**
-  - Partición `/dev/sda1` montada en `/mnt/sda1` (ext4): Reservada para cargas de almacenamiento masivo, respaldos fríos, repositorios Git (Gitea) y archivos de usuario en WebDAV.
-  - Segregación estricta de directorios: `/mnt/sda1/servicios/`, `/mnt/sda1/compartido/`, `/mnt/sda1/sistema/`.
-
----
-
-## Arquitectura de Contexto de Sesión Activo (`/run/vguard/context.json`)
-
-VGUARD v2.0 gestiona el contexto activo guardándolo en `/run/vguard/context.json` (o en `$HOME/.config/vguard/context.json` si no hay root):
+### 2. Motor de Políticas Personalizables por Volumen y Subcarpeta (`vguard.conf` y Políticas JSON)
+En lugar de forzar permisos estáticos globales, VGUARD v3.0 permite declarar políticas granulares por volumen y subcarpeta en `/etc/vguard/vguard.conf` (o en `$HOME/.config/vguard/vguard.conf`):
 
 ```json
 {
-  "service_name": "redis_prod",
-  "tier": "lvm_nvme_fast",
-  "mount_point": "/mnt/nvme_fast/redis_prod",
-  "lv_path": "/dev/fedora_server/redis_prod_data",
-  "owner": "vsynlo:vsynlo",
-  "posix": "770",
-  "selinux": "container_file_t",
-  "selected_at": "2026-07-25T23:55:00Z"
+  "managed_volumes": {
+    "ocis_data": {
+      "tier": "contenedor_hdd",
+      "path": "/mnt/sda1/servicios/ocis_data",
+      "policy": {
+        "owner": "1000",
+        "group": "1000",
+        "mode_dir": "0775",
+        "mode_file": "0664",
+        "selinux_context": "container_file_t",
+        "allow_subfolder_overrides": true
+      },
+      "subfolder_policies": {
+        "onlyoffice/data": {
+          "owner": "1000",
+          "group": "1000",
+          "mode_dir": "0775",
+          "mode_file": "0664",
+          "selinux_context": "container_file_t"
+        }
+      }
+    },
+    "mysql": {
+      "tier": "lvm_nvme_fast",
+      "path": "/mnt/nvme_fast/mysql",
+      "policy": {
+        "owner": "27",
+        "group": "27",
+        "mode_dir": "0700",
+        "mode_file": "0600",
+        "selinux_context": "container_file_t",
+        "allow_subfolder_overrides": false
+      }
+    }
+  }
 }
 ```
 
+Existen plantillas predefinidas en `/etc/vguard/policies/` (`default.json`, `container.json`, `database.json`, `share.json`).
+
+### 3. Inspección en Árbol y Explorador Interactivo TUI (`tree` y `explore`)
+- **Inspección en Árbol ASCII:** `vguard selected tree` renderiza una vista jerárquica de subcarpetas mostrando los atributos `[propietario:grupo modo selinux]` sin alterar ningún archivo.
+- **Explorador Interactivo TUI:** `vguard selected explore` inicia un navegador visual interactivo basado en `whiptail` para recorrer subdirectorios, crear subcarpetas, editar políticas y ejecutar Auto-Heal.
+
+### 4. Contexto de Sesión Activo (`/run/vguard/context.json`)
+Selecciona un objetivo activo con `vguard select <volumen>` y ejecuta las acciones posteriores mediante `vguard selected <acción>` sin necesidad de repetir rutas.
+
 ---
 
-## Instalación y Referencia de Comandos CLI
-
-### Instalación
-
-Ejecuta el script de instalación para vincular el ejecutable y crear los archivos de política:
-
-```bash
-git clone https://github.com/tu-usuario/vguard.git
-cd vguard
-chmod +x install.sh
-sudo ./install.sh
-```
-
-### Resumen de Comandos CLI
+## Referencia de Comandos CLI v3.0
 
 | Categoría | Comando | Descripción |
 | :--- | :--- | :--- |
 | **Contexto** | `vguard select [<tier>] <volumen>` | Marca un volumen gestionado como objetivo activo del Workspace. |
 | **Contexto** | `vguard context` \| `vguard selected` | Muestra detalles del objetivo activo, uso en disco, SELinux y salud. |
 | **Contexto** | `vguard unselect` \| `vguard clear` | Limpia la selección de contexto activo. |
-| **Selected** | `vguard selected status` | Audita y muestra el informe completo del objetivo activo. |
+| **Selected** | `vguard selected status` | Audita el estado del objetivo activo (100% LECTURA PURA). |
+| **Selected** | `vguard selected tree` | Muestra el árbol de subcarpetas en formato ASCII con atributos (LECTURA PURA). |
+| **Selected** | `vguard selected explore` | Abre el explorador TUI interactivo de subcarpetas. |
+| **Selected** | `vguard selected mkdir <subruta>` | Crea subcarpetas anidadas heredando políticas (ej. `onlyoffice/data/cache`). |
+| **Selected** | `vguard selected set-policy <subruta>` | Establece política personalizada para una subcarpeta (`--owner 1000:1000 --mode 0775`). |
+| **Selected** | `vguard selected heal` | Ejecuta auto-heal explícito per-volumen/subcarpeta en el objetivo activo. |
+| **Selected** | `vguard selected audit` | Audita desviaciones de seguridad del objetivo activo (LECTURA PURA). |
 | **Selected** | `vguard selected resize <tamaño>` | Extiende en caliente el volumen LVM y XFS del objetivo activo. |
 | **Selected** | `vguard selected rename <nuevo>` | Renombra directorio, LVM LV, fstab y metadatos del objetivo activo. |
-| **Selected** | `vguard selected heal` | Restablece propietario, permisos POSIX y SELinux del objetivo activo. |
-| **Selected** | `vguard selected audit` | Evalúa desviaciones de permisos del objetivo activo sin modificar archivos. |
 | **Selected** | `vguard selected snap [tamaño]` | Crea un snapshot LVM instantáneo del objetivo activo. |
-| **Selected** | `vguard selected mkdir <subcarpeta>` | Crea una subcarpeta heredando políticas en el objetivo activo. |
 | **Selected** | `vguard selected delete` | Elimina el objetivo activo previa doble confirmación de seguridad. |
-| **Global** | `vguard list` \| `vguard ls` \| `vguard status` | Lista volúmenes gestionados resaltando la marca `[ACTIVE]`. |
-| `Global` | `vguard create <tier> <nombre> [tam]` | Aprovisiona un nuevo volumen y lo marca como activo automáticamente. |
-| `Global` | `vguard heal-all` | Audita y sana todos los volúmenes del sistema. |
-| `Global` | `vguard update` | Auto-actualiza el código vía Git pull y re-instala binarios. |
-| `Global` | `vguard uninstall` | Lanza el asistente de desinstalación de VGUARD. |
+| **Global** | `vguard list` \| `vguard ls` \| `vguard status` | Lista volúmenes gestionados en LECTURA PURA resaltando `[ACTIVE]`. |
+| **Global** | `vguard tree [<target>]` | Muestra el árbol de subcarpetas de cualquier objetivo (LECTURA PURA). |
+| **Global** | `vguard explore [<target>]` | Abre el explorador TUI interactivo para cualquier objetivo. |
+| **Global** | `vguard create <tier> <nombre> [tam]` | Aprovisiona un nuevo volumen y lo marca como activo automáticamente. |
+| **Global** | `vguard heal-all` | Ejecuta auto-heal explícito en todos los volúmenes del sistema. |
+| **Global** | `vguard update` | Auto-actualiza el código vía Git pull y re-instala binarios. |
+| **Global** | `vguard uninstall` | Lanza el asistente de desinstalación de VGUARD. |
 
 ---
 
-## Flujo de Trabajo Rápido v2.0
+## Flujo de Trabajo Operativo v3.0
 
 ```bash
 # 1. Seleccionar objetivo activo en el Workspace
-sudo vguard select nvme_fast redis_prod
+vguard select ocis_data
 
-# 2. Inspeccionar estado del objetivo activo
-sudo vguard selected status
+# 2. Inspeccionar el árbol en LECTURA PURA (Read-Only)
+vguard selected tree
 
-# 3. Extender volumen activo en +10G
-sudo vguard selected resize +10G
+# 3. Crear estructura de subcarpetas anidadas
+vguard selected mkdir onlyoffice/data/cache
 
-# 4. Restaurar permisos y SELinux en volumen activo
+# 4. Asignar política personalizada para subcarpeta
+vguard selected set-policy onlyoffice --owner 1000:1000 --mode 0775
+
+# 5. Navegar interactivamente por la TUI
+vguard selected explore
+
+# 6. Ejecutar Auto-Heal explícito para aplicar las políticas
 sudo vguard selected heal
 ```

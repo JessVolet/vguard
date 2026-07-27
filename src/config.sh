@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# VGUARD - MÓDULO DE CARGA DE CONFIGURACIÓN Y POLÍTICAS
+# VGUARD v3.0 - MÓDULO DE CARGA DE CONFIGURACIÓN Y POLÍTICAS DE INFRAESTRUCTURA
 # ==============================================================================
 
 load_config() {
@@ -25,19 +25,23 @@ load_config() {
         exit 1
     fi
 
-    # Cargar variables del archivo de configuración
-    # shellcheck source=/dev/null
-    source "$CONFIG_FILE"
+    # Usar helper de Python para cargar variables JSON en el entorno
+    local py_helper
+    py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
 
-    # Establecer valores predeterminados de seguridad si faltan
-    VG_NAME="${VG_NAME:-fedora_server}"
-    PATH_HDD_SERVICIOS="${PATH_HDD_SERVICIOS:-/mnt/sda1/servicios}"
-    PATH_HDD_COMPARTIDO="${PATH_HDD_COMPARTIDO:-/mnt/sda1/compartido}"
-    PATH_HDD_SISTEMA="${PATH_HDD_SISTEMA:-/mnt/sda1/sistema}"
-    PATH_NVME_FAST="${PATH_NVME_FAST:-/mnt/nvme_fast}"
-    VGUARD_OWNER="${VGUARD_OWNER:-vsynlo:vsynlo}"
-    META_FILE="${META_FILE:-.vguard_meta}"
-    
+    if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
+        eval "$(python3 "$py_helper" get-vars "$CONFIG_FILE")"
+    else
+        # Fallback a bash plano si python3 no está disponible
+        VG_NAME="${VG_NAME:-fedora_server}"
+        PATH_HDD_SERVICIOS="${PATH_HDD_SERVICIOS:-/mnt/sda1/servicios}"
+        PATH_HDD_COMPARTIDO="${PATH_HDD_COMPARTIDO:-/mnt/sda1/compartido}"
+        PATH_HDD_SISTEMA="${PATH_HDD_SISTEMA:-/mnt/sda1/sistema}"
+        PATH_NVME_FAST="${PATH_NVME_FAST:-/mnt/nvme_fast}"
+        VGUARD_OWNER="${VGUARD_OWNER:-vsynlo:vsynlo}"
+        META_FILE="${META_FILE:-.vguard_meta}"
+    fi
+
     SELINUX_CONTAINER="${SELINUX_CONTAINER:-container_file_t}"
     SELINUX_NETWORK="${SELINUX_NETWORK:-samba_share_t}"
     SELINUX_SYSTEM="${SELINUX_SYSTEM:-systemd_system_unit_t}"
@@ -47,11 +51,39 @@ load_config() {
     PERM_POSIX_SYSTEM="${PERM_POSIX_SYSTEM:-750}"
 }
 
+obtener_politica_volumen() {
+    local target_vol="$1"
+    local subfolder="${2:-}"
+
+    local py_helper
+    py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
+
+    POL_OWNER="vsynlo"
+    POL_GROUP="vsynlo"
+    POL_MODE_DIR="0770"
+    POL_MODE_FILE="0660"
+    POL_SELINUX="container_file_t"
+    POL_ALLOW_SUB="true"
+
+    if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
+        local policy_json
+        policy_json=$(python3 "$py_helper" get-policy "$CONFIG_FILE" "$target_vol" "$subfolder")
+        if [ -n "$policy_json" ]; then
+            POL_OWNER=$(echo "$policy_json" | jq -r '.owner // "vsynlo"' 2>/dev/null || echo "vsynlo")
+            POL_GROUP=$(echo "$policy_json" | jq -r '.group // "vsynlo"' 2>/dev/null || echo "vsynlo")
+            POL_MODE_DIR=$(echo "$policy_json" | jq -r '.mode_dir // "0770"' 2>/dev/null || echo "0770")
+            POL_MODE_FILE=$(echo "$policy_json" | jq -r '.mode_file // "0660"' 2>/dev/null || echo "0660")
+            POL_SELINUX=$(echo "$policy_json" | jq -r '.selinux_context // "container_file_t"' 2>/dev/null || echo "container_file_t")
+            POL_ALLOW_SUB=$(echo "$policy_json" | jq -r '.allow_subfolder_overrides // true' 2>/dev/null || echo "true")
+        fi
+    fi
+}
+
 init_config() {
     local target_dir="/etc/vguard"
     local target_file="$target_dir/vguard.conf"
 
-    msg_section "INICIALIZACIÓN DE CONFIGURACIÓN VGUARD"
+    msg_section "INICIALIZACIÓN DE CONFIGURACIÓN VGUARD v3.0"
 
     if [ "$EUID" -ne 0 ]; then
         target_dir="$HOME/.config/vguard"
@@ -61,11 +93,11 @@ init_config() {
         msg_info "Instalando configuración a nivel de sistema en: $target_file"
     fi
 
-    mkdir -p "$target_dir"
+    mkdir -p "$target_dir/policies"
 
     if [ -f "$target_file" ]; then
         msg_warning "El archivo $target_file ya existe."
-        read -p "¿Deseas sobrescribirlo con la plantilla por defecto? (s/N): " confirm
+        read -p "¿Deseas sobrescribirlo con la plantilla v3.0 por defecto? (s/N): " confirm
         if [[ ! "$confirm" =~ ^[sS]$ ]]; then
             msg_info "Operación cancelada."
             return 0
@@ -73,9 +105,14 @@ init_config() {
     fi
 
     local template_source="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../config/vguard.conf.example"
+    local policies_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/../config/policies"
+
     if [ -f "$template_source" ]; then
         cp "$template_source" "$target_file"
-        msg_success "Configuración inicializada correctamente en: $target_file"
+        if [ -d "$policies_dir" ]; then
+            cp -r "$policies_dir"/* "$target_dir/policies/" 2>/dev/null || true
+        fi
+        msg_success "Configuración e plantillas v3.0 inicializadas correctamente en: $target_file"
     else
         msg_error "No se encontró la plantilla de configuración en $template_source"
         return 1

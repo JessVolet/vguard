@@ -1,0 +1,9 @@
+{
+  "name": "database",
+  "owner": "27",
+  "group": "27",
+  "mode_dir": "0700",
+  "mode_file": "0600",
+  "selinux_context": "container_file_t",
+  "allow_subfolder_overrides": false
+}

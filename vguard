@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# VGUARD v2.0 - GUARDIA DE ALMACENAMIENTO Y MOTOR DE POLÍTICAS DE INFRAESTRUCTURA
+# VGUARD v3.0 - GUARDIA DE ALMACENAMIENTO Y MOTOR DE POLÍTICAS DE INFRAESTRUCTURA
 # ==============================================================================
 
 set -e
@@ -29,6 +29,10 @@ source "$SCRIPT_DIR/src/remove.sh"
 source "$SCRIPT_DIR/src/update.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/src/manage.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/tree.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/explore.sh"
 
 mostrar_ayuda() {
     print_banner
@@ -41,37 +45,44 @@ mostrar_ayuda() {
     echo "  unselect | clear                 Limpia la selección actual"
     echo ""
     echo -e "${CLR_BOLD}ACCIONES SOBRE EL OBJETIVO ACTIVO (SELECTED):${CLR_RESET}"
-    echo "  selected status                  Muestra directorio, salud, espacio y SELinux"
+    echo "  selected status                  Muestra directorio, salud, espacio y SELinux (Read-Only)"
+    echo "  selected tree                    Muestra árbol de subcarpetas con permisos/SELinux (Read-Only)"
+    echo "  selected explore                 Abre el explorador TUI interactivo de subcarpetas"
+    echo "  selected mkdir <subcarpeta>      Crea subcarpetas anidadas (ej. onlyoffice/data/cache)"
+    echo "  selected set-policy <subpath>    Establece política personalizada para una subcarpeta"
+    echo "  selected heal                    Ejecuta reparación explícita per-volumen (Auto-Heal)"
+    echo "  selected audit                   Audita desviaciones de seguridad (Read-Only)"
     echo "  selected resize <tamaño>         Extiende/reduce el volumen seleccionado (ej. +10G)"
     echo "  selected rename <nuevo_nombre>   Renombra el servicio, directorio y LV activo"
-    echo "  selected heal                    Restaura permisos/SELinux del volumen activo"
-    echo "  selected audit                   Audita desviaciones de seguridad del volumen activo"
     echo "  selected snap [nombre]           Toma un snapshot del volumen activo"
-    echo "  selected mkdir <subcarpeta>      Crea una subcarpeta asegurada en el volumen activo"
     echo "  selected delete                  Elimina el volumen activo (requiere confirmación)"
     echo ""
     echo -e "${CLR_BOLD}COMANDOS GENERALES / GLOBALES:${CLR_RESET}"
-    echo "  list | ls | status               Lista volúmenes (resalta el activo si existe)"
+    echo "  list | ls | status               Lista volúmenes y audita salud en LECTURA PURA"
+    echo "  tree [<target>]                  Muestra árbol de subcarpetas en LECTURA PURA"
+    echo "  explore [<target>]               Abre el explorador TUI interactivo de subcarpetas"
     echo "  create <tier> <nombre> [tam]     Crea un volumen y lo selecciona automáticamente"
-    echo "  heal [<ruta>]                    Restaura permisos/SELinux de un volumen o del activo"
-    echo "  heal-all                         Audita y sana todos los volúmenes del sistema"
-    echo "  audit [<ruta>]                   Audita desviaciones de permisos de un volumen o del activo"
+    echo "  heal [<ruta>]                    Ejecuta auto-heal explícito en un volumen"
+    echo "  heal-all                         Ejecuta auto-heal explícito en todos los volúmenes"
+    echo "  audit [<ruta>]                   Audita desviaciones en LECTURA PURA (Read-Only)"
     echo "  rename <target> <nuevo_nombre>   Renombra un servicio/directorio específico"
     echo "  resize <target> <tamaño>         Redimensiona un volumen LVM NVMe específico"
-    echo "  mkdir <target> <subcarpeta>      Crea una subcarpeta con herencia en una ruta específica"
+    echo "  mkdir <target> <subcarpeta>      Crea subcarpetas anidadas en un objetivo"
     echo "  remove | rm | delete <target>    Elimina un servicio/volumen LVM previa doble confirmación"
     echo "  snap [servicio] [tamaño]         Crea un snapshot LVM de un volumen NVMe"
     echo "  snap-list                        Lista los snapshots LVM activos"
     echo "  rollback [snap_nombre]           Restaura un snapshot LVM previo"
     echo "  update                           Actualiza VGUARD vía Git pull y re-instala"
     echo "  uninstall                        Ejecuta el asistente de desinstalación de VGUARD"
-    echo "  help | --help | -h               Muestra este menú de ayuda"
+    echo "  help | --help | -h              Muestra este menú de ayuda"
     echo ""
-    echo -e "${CLR_BOLD}EJEMPLO DE WORKFLOW RÁPIDO V2.0:${CLR_RESET}"
-    echo "  1. vguard select nvme_fast redis_prod"
-    echo "  2. vguard selected status"
-    echo "  3. vguard selected resize +10G"
-    echo "  4. vguard selected heal"
+    echo -e "${CLR_BOLD}EJEMPLO DE WORKFLOW RÁPIDO V3.0:${CLR_RESET}"
+    echo "  1. vguard select ocis_data"
+    echo "  2. vguard selected tree"
+    echo "  3. vguard selected mkdir onlyoffice/data/cache"
+    echo "  4. vguard selected set-policy onlyoffice --owner 1000:1000 --mode 0775"
+    echo "  5. vguard selected explore"
+    echo "  6. sudo vguard selected heal"
     echo ""
 }
 
@@ -93,12 +104,33 @@ main() {
             load_config
             mostrar_contexto_activo
             ;;
+        tree)
+            load_config
+            mostrar_arbol_volumen "$2"
+            ;;
+        explore)
+            load_config
+            explorar_volumen_tui "$2"
+            ;;
         selected)
             load_config
             local subaccion="${2:-status}"
             case "$subaccion" in
                 status|info)
                     mostrar_contexto_activo
+                    ;;
+                tree)
+                    mostrar_arbol_volumen ""
+                    ;;
+                explore)
+                    explorar_volumen_tui ""
+                    ;;
+                mkdir|subfolder)
+                    crear_subcarpeta "" "$3"
+                    ;;
+                set-policy)
+                    shift 2
+                    establecer_politica_subcarpeta "" "$@"
                     ;;
                 resize|extend)
                     redimensionar_volumen "" "$3"
@@ -118,9 +150,6 @@ main() {
                     ;;
                 snap)
                     crear_snapshot "" "$3"
-                    ;;
-                mkdir|subfolder)
-                    crear_subcarpeta "" "$3"
                     ;;
                 delete|remove|rm)
                     remover_almacenamiento ""
@@ -175,6 +204,11 @@ main() {
             load_config
             crear_subcarpeta "$2" "$3"
             ;;
+        set-policy)
+            load_config
+            shift 1
+            establecer_politica_subcarpeta "$@"
+            ;;
         remove|rm|delete)
             load_config
             remover_almacenamiento "$2"
@@ -211,31 +245,37 @@ main() {
             msg_info "Menú Interactivo Principal"
             echo "1) Seleccionar objetivo activo (Workspace Select)"
             echo "2) Ver detalles y estado del objetivo activo (Context Status)"
-            echo "3) Crear nuevo volumen o carpeta de servicio"
-            echo "4) Auditar y reparar permisos de una carpeta (Heal)"
-            echo "5) Ver estado global de almacenamiento y permisos (List)"
-            echo "6) Editar / Renombrar / Redimensionar un volumen"
-            echo "7) Eliminar servicio o volumen gestionado (Doble confirmación)"
-            echo "8) Crear Snapshot LVM de emergencia"
-            echo "9) Auditar y sanar TODOS los volúmenes (Heal-All)"
-            echo "10) Actualizar VGUARD (git pull)"
-            echo "11) Desinstalar VGUARD"
-            echo "12) Salir"
-            read -p "Selecciona una acción (1-12): " opcion_menu
+            echo "3) Inspeccionar árbol de subcarpetas en LECTURA PURA (Tree)"
+            echo "4) Abrir Explorador Interactivo TUI (Explore)"
+            echo "5) Crear nuevo volumen o carpeta de servicio"
+            echo "6) Auditar permisos en LECTURA PURA (Audit)"
+            echo "7) Ejecutar Auto-Heal explícito (Heal)"
+            echo "8) Ver estado global de almacenamiento (List)"
+            echo "9) Editar / Renombrar / Redimensionar un volumen"
+            echo "10) Eliminar servicio o volumen gestionado (Doble confirmación)"
+            echo "11) Crear Snapshot LVM de emergencia"
+            echo "12) Ejecutar Auto-Heal en TODOS los volúmenes (Heal-All)"
+            echo "13) Actualizar VGUARD (git pull)"
+            echo "14) Desinstalar VGUARD"
+            echo "15) Salir"
+            read -p "Selecciona una acción (1-15): " opcion_menu
 
             case "$opcion_menu" in
                 1) seleccionar_contexto ;;
                 2) mostrar_contexto_activo ;;
-                3) crear_almacenamiento ;;
-                4) reparar_almacenamiento ;;
-                5) listar_volumenes_gestionados ;;
-                6) gestionar_almacenamiento ;;
-                7) remover_almacenamiento ;;
-                8) crear_snapshot ;;
-                9) sanar_todos_los_volumenes ;;
-                10) actualizar_vguard ;;
-                11) bash "$SCRIPT_DIR/uninstall.sh" ;;
-                12) exit 0 ;;
+                3) mostrar_arbol_volumen ;;
+                4) explorar_volumen_tui ;;
+                5) crear_almacenamiento ;;
+                6) auditar_y_reparar_directorio "${CTX_MOUNT_POINT:-}" "true" ;;
+                7) reparar_almacenamiento ;;
+                8) listar_volumenes_gestionados ;;
+                9) gestionar_almacenamiento ;;
+                10) remover_almacenamiento ;;
+                11) crear_snapshot ;;
+                12) sanar_todos_los_volumenes ;;
+                13) actualizar_vguard ;;
+                14) bash "$SCRIPT_DIR/uninstall.sh" ;;
+                15) exit 0 ;;
                 *) msg_error "Opción inválida."; exit 1 ;;
             esac
             ;;
