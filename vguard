@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# VGUARD v3.0 - GUARDIA DE ALMACENAMIENTO Y MOTOR DE POLÍTICAS DE INFRAESTRUCTURA
+# VGUARD v3.0 - VOLUME GUARD & STORAGE INFRASTRUCTURE POLICY ENGINE
 # ==============================================================================
 
 set -e
@@ -11,6 +11,8 @@ SCRIPT_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 # Importar Módulos Core
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/src/ui.sh"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/src/i18n.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/src/config.sh"
 # shellcheck source=/dev/null
@@ -34,88 +36,247 @@ source "$SCRIPT_DIR/src/tree.sh"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/src/explore.sh"
 
-mostrar_ayuda() {
+mostrar_ayuda_principal() {
     print_banner
-    echo -e "${CLR_BOLD}USO:${CLR_RESET}"
-    echo "  vguard <comando> [opciones]"
-    echo ""
-    echo -e "${CLR_BOLD}GESTIÓN DE CONTEXTO (SELECCIÓN):${CLR_RESET}"
-    echo "  use | select [<tier>] <volumen>  Selecciona un volumen como objetivo activo"
-    echo "  context | selected               Muestra detalles y estado del objetivo activo"
-    echo "  unselect | clear                 Limpia la selección actual"
-    echo ""
-    echo -e "${CLR_BOLD}ACCIONES SOBRE EL OBJETIVO ACTIVO (SELECTED):${CLR_RESET}"
-    echo "  selected status                  Muestra directorio, salud, espacio y SELinux (Read-Only)"
-    echo "  selected tree                    Muestra árbol de subcarpetas con permisos/SELinux (Read-Only)"
-    echo "  selected explore                 Abre el explorador TUI interactivo de subcarpetas"
-    echo "  selected mkdir <subcarpeta>      Crea subcarpetas anidadas (ej. onlyoffice/data/cache)"
-    echo "  selected set-policy <subpath>    Establece política personalizada para una subcarpeta"
-    echo "  selected heal                    Ejecuta reparación explícita per-volumen (Auto-Heal)"
-    echo "  selected audit                   Audita desviaciones de seguridad (Read-Only)"
-    echo "  selected resize <tamaño>         Extiende/reduce el volumen seleccionado (ej. +10G)"
-    echo "  selected rename <nuevo_nombre>   Renombra el servicio, directorio y LV activo"
-    echo "  selected snap [nombre]           Toma un snapshot del volumen activo"
-    echo "  selected delete                  Elimina el volumen activo (requiere confirmación)"
-    echo ""
-    echo -e "${CLR_BOLD}COMANDOS GENERALES / GLOBALES:${CLR_RESET}"
-    echo "  list | ls | status               Lista volúmenes y audita salud en LECTURA PURA"
-    echo "  tree [<target>]                  Muestra árbol de subcarpetas en LECTURA PURA"
-    echo "  explore [<target>]               Abre el explorador TUI interactivo de subcarpetas"
-    echo "  create <tier> <nombre> [tam]     Crea un volumen y lo selecciona automáticamente"
-    echo "  heal [<ruta>]                    Ejecuta auto-heal explícito en un volumen"
-    echo "  heal-all                         Ejecuta auto-heal explícito en todos los volúmenes"
-    echo "  audit [<ruta>]                   Audita desviaciones en LECTURA PURA (Read-Only)"
-    echo "  rename <target> <nuevo_nombre>   Renombra un servicio/directorio específico"
-    echo "  resize <target> <tamaño>         Redimensiona un volumen LVM NVMe específico"
-    echo "  mkdir <target> <subcarpeta>      Crea subcarpetas anidadas en un objetivo"
-    echo "  remove | rm | delete <target>    Elimina un servicio/volumen LVM previa doble confirmación"
-    echo "  snap [servicio] [tamaño]         Crea un snapshot LVM de un volumen NVMe"
-    echo "  snap-list                        Lista los snapshots LVM activos"
-    echo "  rollback [snap_nombre]           Restaura un snapshot LVM previo"
-    echo "  update                           Actualiza VGUARD vía Git pull y re-instala"
-    echo "  uninstall                        Ejecuta el asistente de desinstalación de VGUARD"
-    echo "  help | --help | -h              Muestra este menú de ayuda"
-    echo ""
-    echo -e "${CLR_BOLD}EJEMPLO DE WORKFLOW RÁPIDO V3.0:${CLR_RESET}"
-    echo "  1. vguard select ocis_data"
-    echo "  2. vguard selected tree"
-    echo "  3. vguard selected mkdir onlyoffice/data/cache"
-    echo "  4. vguard selected set-policy onlyoffice --owner 1000:1000 --mode 0775"
-    echo "  5. vguard selected explore"
-    echo "  6. sudo vguard selected heal"
-    echo ""
+    if [ "$CURRENT_LANG" = "es" ]; then
+        echo -e "${CLR_BOLD}USO:${CLR_RESET}"
+        echo "  vguard <comando> [opciones]"
+        echo ""
+        echo -e "${CLR_BOLD}COMANDOS CORE:${CLR_RESET}"
+        echo "  select | use [<tier>] <volumen>  Selecciona un volumen como objetivo activo del Workspace"
+        echo "  context | selected               Muestra detalles y estado del objetivo activo"
+        echo "  selected <subcomando> [args]     Ejecuta una acción sobre el objetivo activo"
+        echo "  list | ls | status               Lista volúmenes gestionados y audita en LECTURA PURA"
+        echo "  tree [<target>]                  Inspecciona árbol de subcarpetas en LECTURA PURA"
+        echo "  explore [<target>]               Abre el explorador TUI interactivo de subcarpetas"
+        echo "  create <tier> <nombre> [tam]     Crea un volumen y lo selecciona automáticamente"
+        echo "  heal [<target>]                  Ejecuta auto-heal explícito per-volumen/subcarpeta"
+        echo "  heal-all                         Ejecuta auto-heal explícito en todos los volúmenes"
+        echo "  audit [<target>]                 Audita desviaciones de seguridad en LECTURA PURA"
+        echo "  config [--lang en|es]            Configura ajustes globales de VGUARD (ej. idioma)"
+        echo "  update                           Actualiza VGUARD vía Git pull y re-instala"
+        echo "  uninstall                        Ejecuta el asistente de desinstalación de VGUARD"
+        echo "  help | --help | -h              Muestra este menú de ayuda"
+        echo ""
+        echo -e "${CLR_BOLD}AYUDA DE SUBCOMANDOS:${CLR_RESET}"
+        echo "  Para ver todas las opciones detalladas sobre el objetivo activo, ejecuta:"
+        echo "    ${CLR_CYAN}vguard selected --help${CLR_RESET}"
+        echo ""
+        echo -e "${CLR_BOLD}EJEMPLO DE WORKFLOW RÁPIDO V3.0:${CLR_RESET}"
+        echo "  1. vguard select ocis_data"
+        echo "  2. vguard selected tree"
+        echo "  3. vguard selected mkdir onlyoffice/data/cache"
+        echo "  4. vguard selected set-policy onlyoffice --owner 1000:1000 --mode 0775"
+        echo "  5. sudo vguard selected heal"
+        echo ""
+    else
+        echo -e "${CLR_BOLD}USAGE:${CLR_RESET}"
+        echo "  vguard <command> [options]"
+        echo ""
+        echo -e "${CLR_BOLD}CORE COMMANDS:${CLR_RESET}"
+        echo "  select | use [<tier>] <volume>   Selects a managed volume as the active Workspace target"
+        echo "  context | selected               Displays active target details, disk space, and health"
+        echo "  selected <subcommand> [args]     Executes an operational command on the active target"
+        echo "  list | ls | status               Lists managed volumes and audits health (100% Read-Only)"
+        echo "  tree [<target>]                  Inspects nested subfolder tree (100% Read-Only)"
+        echo "  explore [<target>]               Opens the TUI interactive directory explorer"
+        echo "  create <tier> <name> [size]      Provisions a new volume and sets it as active target"
+        echo "  heal [<target>]                  Executes explicit per-volume/subfolder Auto-Heal"
+        echo "  heal-all                         Executes explicit Auto-Heal across all volumes"
+        echo "  audit [<target>]                 Audits permission drift (100% Read-Only)"
+        echo "  config [--lang en|es]            Configures global settings (e.g. default language)"
+        echo "  update                           Self-updates VGUARD codebase via Git pull"
+        echo "  uninstall                        Launches VGUARD uninstaller"
+        echo "  help | --help | -h              Displays this help menu"
+        echo ""
+        echo -e "${CLR_BOLD}SUBCOMMAND HELP:${CLR_RESET}"
+        echo "  To view all available subcommands for the active Workspace target, run:"
+        echo "    ${CLR_CYAN}vguard selected --help${CLR_RESET}"
+        echo ""
+        echo -e "${CLR_BOLD}EXAMPLE V3.0 WORKFLOW:${CLR_RESET}"
+        echo "  1. vguard select ocis_data"
+        echo "  2. vguard selected tree"
+        echo "  3. vguard selected mkdir onlyoffice/data/cache"
+        echo "  4. vguard selected set-policy onlyoffice --owner 1000:1000 --mode 0775"
+        echo "  5. sudo vguard selected heal"
+        echo ""
+    fi
+}
+
+mostrar_ayuda_selected() {
+    print_banner
+    if [ "$CURRENT_LANG" = "es" ]; then
+        echo -e "${CLR_BOLD}ACCIONES SOBRE EL OBJETIVO ACTIVO (SELECTED WORKSPACE):${CLR_RESET}"
+        echo "  vguard selected status                  Muestra estado, salud, espacio y SELinux (Read-Only)"
+        echo "  vguard selected tree                    Muestra árbol ASCII de subcarpetas y atributos (Read-Only)"
+        echo "  vguard selected explore                 Abre el explorador TUI interactivo de subcarpetas"
+        echo "  vguard selected mkdir <subruta>         Crea subcarpetas anidadas (ej. onlyoffice/data/cache)"
+        echo "  vguard selected set-policy <subruta>    Asigna política personalizada (--owner --mode --selinux)"
+        echo "  vguard selected heal                    Ejecuta auto-heal explícito per-volumen/subcarpeta"
+        echo "  vguard selected audit                   Audita desviaciones de seguridad (Read-Only)"
+        echo "  vguard selected resize <tamaño>         Extiende en caliente un volumen LVM NVMe (+10G, 50G)"
+        echo "  vguard selected rename <nuevo_nombre>   Renombra el servicio, directorio y LV activo"
+        echo "  vguard selected snap [tamaño]           Crea un snapshot LVM instantáneo"
+        echo "  vguard selected delete                  Elimina el volumen activo previa doble confirmación"
+        echo ""
+    else
+        echo -e "${CLR_BOLD}ACTIVE TARGET OPERATIONS (SELECTED WORKSPACE):${CLR_RESET}"
+        echo "  vguard selected status                  Displays details, health, space, and SELinux (Read-Only)"
+        echo "  vguard selected tree                    Displays nested ASCII tree with attributes (Read-Only)"
+        echo "  vguard selected explore                 Opens interactive TUI directory explorer"
+        echo "  vguard selected mkdir <nested_path>     Creates nested subdirectories (e.g. onlyoffice/data/cache)"
+        echo "  vguard selected set-policy <subpath>    Sets custom subfolder policy (--owner --mode --selinux)"
+        echo "  vguard selected heal                    Executes explicit per-volume/subfolder Auto-Heal"
+        echo "  vguard selected audit                   Audits permission drift (Read-Only)"
+        echo "  vguard selected resize <size>           Hot-extends NVMe LVM volume and XFS filesystem"
+        echo "  vguard selected rename <new_name>       Renames directory, LVM LV, fstab, and metadata"
+        echo "  vguard selected snap [size]             Provisions point-in-time LVM snapshot"
+        echo "  vguard selected delete                  Safe removal with double verification"
+        echo ""
+    fi
+}
+
+menu_interactivo_categorizado() {
+    while true; do
+        print_banner
+        load_config
+        echo -e "${CLR_BOLD}$(t MAIN_MENU_TITLE)${CLR_RESET}"
+        draw_separator
+        echo "$(t CAT_WORKSPACE)"
+        echo "$(t CAT_SELECTED)"
+        echo "$(t CAT_GLOBAL)"
+        echo "$(t CAT_SYSTEM)"
+        echo "$(t CAT_EXIT)"
+        draw_separator
+        read -p "$(t SELECT_OPTION) (1-5): " cat_option
+
+        case "$cat_option" in
+            1)
+                echo -e "\n${CLR_BOLD}--- WORKSPACE & CONTEXT MANAGEMENT ---${CLR_RESET}"
+                echo "1) Select Active Target (vguard select)"
+                echo "2) View Active Context Status (vguard context)"
+                echo "3) Clear Active Selection (vguard unselect)"
+                echo "4) Back to Main Menu"
+                read -p "Option (1-4): " sub_opt1
+                case "$sub_opt1" in
+                    1) seleccionar_contexto ;;
+                    2) mostrar_contexto_activo ;;
+                    3) limpiar_contexto ;;
+                    *) ;;
+                esac
+                ;;
+            2)
+                echo -e "\n${CLR_BOLD}--- ACTIVE TARGET OPERATIONS (SELECTED) ---${CLR_RESET}"
+                echo "1) Active Target Status (Read-Only)"
+                echo "2) Subfolder ASCII Tree (Read-Only)"
+                echo "3) Open TUI Interactive Explorer"
+                echo "4) Create Nested Subfolder"
+                echo "5) Set Custom Subfolder Policy"
+                echo "6) Execute Explicit Auto-Heal"
+                echo "7) Hot-Resize LVM Volume"
+                echo "8) Rename Active Target"
+                echo "9) Take LVM Snapshot"
+                echo "10) Delete Active Target (Double verification)"
+                echo "11) Back to Main Menu"
+                read -p "Option (1-11): " sub_opt2
+                case "$sub_opt2" in
+                    1) mostrar_contexto_activo ;;
+                    2) mostrar_arbol_volumen "" ;;
+                    3) explorar_volumen_tui "" ;;
+                    4) crear_subcarpeta "" ;;
+                    5) establecer_politica_subcarpeta "" ;;
+                    6) reparar_almacenamiento "" ;;
+                    7) redimensionar_volumen "" ;;
+                    8) renombrar_almacenamiento "" ;;
+                    9) crear_snapshot "" ;;
+                    10) remover_almacenamiento "" ;;
+                    *) ;;
+                esac
+                ;;
+            3)
+                echo -e "\n${CLR_BOLD}--- PROVISIONING & GLOBAL OPERATIONS ---${CLR_RESET}"
+                echo "1) Create New Storage Volume"
+                echo "2) List All Managed Volumes (Read-Only)"
+                echo "3) Inspect Volume Tree (Read-Only)"
+                echo "4) Audit Target Drift (Read-Only)"
+                echo "5) Execute Auto-Heal on Target"
+                echo "6) Execute Auto-Heal on ALL Volumes (Heal-All)"
+                echo "7) Back to Main Menu"
+                read -p "Option (1-7): " sub_opt3
+                case "$sub_opt3" in
+                    1) crear_almacenamiento ;;
+                    2) listar_volumenes_gestionados ;;
+                    3) mostrar_arbol_volumen ;;
+                    4) auditar_y_reparar_directorio "" "true" ;;
+                    5) reparar_almacenamiento ;;
+                    6) sanar_todos_los_volumenes ;;
+                    *) ;;
+                esac
+                ;;
+            4)
+                echo -e "\n${CLR_BOLD}--- SYSTEM CONFIGURATION & MAINTENANCE ---${CLR_RESET}"
+                echo "1) Set Language (en / es)"
+                echo "2) Self-Update VGUARD (git pull)"
+                echo "3) Uninstall VGUARD"
+                echo "4) Back to Main Menu"
+                read -p "Option (1-4): " sub_opt4
+                case "$sub_opt4" in
+                    1)
+                        read -p "Enter language (en/es): " set_lang
+                        configurar_idioma "$set_lang"
+                        ;;
+                    2) actualizar_vguard ;;
+                    3) bash "$SCRIPT_DIR/uninstall.sh" ;;
+                    *) ;;
+                esac
+                ;;
+            5)
+                exit 0
+                ;;
+            *)
+                msg_error "$(t INVALID_OPTION)"
+                ;;
+        esac
+    done
 }
 
 main() {
+    load_config
+
     local comando="${1:-menu}"
 
     case "$comando" in
         init)
             init_config
             ;;
+        config)
+            if [ "$2" = "--lang" ] || [ "$2" = "-l" ]; then
+                configurar_idioma "$3"
+            else
+                msg_info "Config options: vguard config --lang [en|es]"
+            fi
+            ;;
         use|select)
-            load_config
             seleccionar_contexto "$2" "$3"
             ;;
         unselect|clear)
             limpiar_contexto
             ;;
         context)
-            load_config
             mostrar_contexto_activo
             ;;
         tree)
-            load_config
             mostrar_arbol_volumen "$2"
             ;;
         explore)
-            load_config
             explorar_volumen_tui "$2"
             ;;
         selected)
-            load_config
             local subaccion="${2:-status}"
             case "$subaccion" in
+                --help|-h)
+                    mostrar_ayuda_selected
+                    ;;
                 status|info)
                     mostrar_contexto_activo
                     ;;
@@ -145,7 +306,7 @@ main() {
                     if cargar_contexto >/dev/null 2>&1; then
                         auditar_y_reparar_directorio "$CTX_MOUNT_POINT" "true"
                     else
-                        msg_error "No hay ningún volumen seleccionado. Usa 'vguard select <servicio>' primero."
+                        msg_error "No target selected. Use 'vguard select <volume>' first."
                     fi
                     ;;
                 snap)
@@ -155,74 +316,60 @@ main() {
                     remover_almacenamiento ""
                     ;;
                 *)
-                    msg_error "Subcomando '$subaccion' para 'selected' no reconocido."
-                    mostrar_ayuda
+                    msg_error "Subcommand '$subaccion' for 'selected' not recognized."
+                    mostrar_ayuda_selected
                     exit 1
                     ;;
             esac
             ;;
         create)
-            load_config
             crear_almacenamiento "$2" "$3" "$4"
             ;;
         heal|repair)
-            load_config
             reparar_almacenamiento "$2"
             ;;
         heal-all)
-            load_config
             sanar_todos_los_volumenes
             ;;
         audit)
-            load_config
             if [ -n "$2" ]; then
                 auditar_y_reparar_directorio "$2" "true"
             elif cargar_contexto >/dev/null 2>&1; then
                 auditar_y_reparar_directorio "$CTX_MOUNT_POINT" "true"
             else
-                msg_error "Especifica la ruta a auditar o selecciona un contexto activo con 'vguard select <servicio>'."
+                msg_error "Specify a target path or select an active volume with 'vguard select <volume>'."
                 exit 1
             fi
             ;;
         status|list|ls)
-            load_config
             listar_volumenes_gestionados
             ;;
         manage|edit)
-            load_config
             gestionar_almacenamiento
             ;;
         rename)
-            load_config
             renombrar_almacenamiento "$2" "$3"
             ;;
         resize|extend)
-            load_config
             redimensionar_volumen "$2" "$3"
             ;;
         mkdir|subfolder)
-            load_config
             crear_subcarpeta "$2" "$3"
             ;;
         set-policy)
-            load_config
             shift 1
             establecer_politica_subcarpeta "$@"
             ;;
         remove|rm|delete)
-            load_config
             remover_almacenamiento "$2"
             ;;
         snap)
-            load_config
             crear_snapshot "$2" "$3"
             ;;
         snap-list|snaps)
-            load_config
             listar_snapshots
             ;;
         rollback)
-            load_config
             revertir_snapshot "$2"
             ;;
         update|self-update)
@@ -232,56 +379,19 @@ main() {
             if [ -f "$SCRIPT_DIR/uninstall.sh" ]; then
                 bash "$SCRIPT_DIR/uninstall.sh"
             else
-                msg_error "No se encontró el script uninstall.sh"
+                msg_error "uninstall.sh script not found"
                 exit 1
             fi
             ;;
         help|--help|-h)
-            mostrar_ayuda
+            mostrar_ayuda_principal
             ;;
         menu)
-            print_banner
-            load_config
-            msg_info "Menú Interactivo Principal"
-            echo "1) Seleccionar objetivo activo (Workspace Select)"
-            echo "2) Ver detalles y estado del objetivo activo (Context Status)"
-            echo "3) Inspeccionar árbol de subcarpetas en LECTURA PURA (Tree)"
-            echo "4) Abrir Explorador Interactivo TUI (Explore)"
-            echo "5) Crear nuevo volumen o carpeta de servicio"
-            echo "6) Auditar permisos en LECTURA PURA (Audit)"
-            echo "7) Ejecutar Auto-Heal explícito (Heal)"
-            echo "8) Ver estado global de almacenamiento (List)"
-            echo "9) Editar / Renombrar / Redimensionar un volumen"
-            echo "10) Eliminar servicio o volumen gestionado (Doble confirmación)"
-            echo "11) Crear Snapshot LVM de emergencia"
-            echo "12) Ejecutar Auto-Heal en TODOS los volúmenes (Heal-All)"
-            echo "13) Actualizar VGUARD (git pull)"
-            echo "14) Desinstalar VGUARD"
-            echo "15) Salir"
-            read -p "Selecciona una acción (1-15): " opcion_menu
-
-            case "$opcion_menu" in
-                1) seleccionar_contexto ;;
-                2) mostrar_contexto_activo ;;
-                3) mostrar_arbol_volumen ;;
-                4) explorar_volumen_tui ;;
-                5) crear_almacenamiento ;;
-                6) auditar_y_reparar_directorio "${CTX_MOUNT_POINT:-}" "true" ;;
-                7) reparar_almacenamiento ;;
-                8) listar_volumenes_gestionados ;;
-                9) gestionar_almacenamiento ;;
-                10) remover_almacenamiento ;;
-                11) crear_snapshot ;;
-                12) sanar_todos_los_volumenes ;;
-                13) actualizar_vguard ;;
-                14) bash "$SCRIPT_DIR/uninstall.sh" ;;
-                15) exit 0 ;;
-                *) msg_error "Opción inválida."; exit 1 ;;
-            esac
+            menu_interactivo_categorizado
             ;;
         *)
-            msg_error "Comando '$comando' desconocido."
-            mostrar_ayuda
+            msg_error "Unknown command '$comando'."
+            mostrar_ayuda_principal
             exit 1
             ;;
     esac

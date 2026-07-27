@@ -95,6 +95,16 @@ Selecciona un objetivo activo con `vguard select <volumen>` y ejecuta las accion
 
 ---
 
+## Historial de Versiones y Etiquetas de Git (Git Tags)
+
+VGUARD sigue el esquema de Versionado Semántico (`vMAJOR.MINOR.PATCH`). Puedes usar etiquetas de git para inspeccionar versiones específicas:
+
+- **v1.0.0:** Aprovisionamiento base de almacenamiento, volúmenes LVM, metadatos y autocuración inicial.
+- **v2.0.0:** Introducción del Contexto de Sesión Activo en Workspace (`vguard select`, `vguard selected`) y reparación en lote (`vguard heal-all`).
+- **v3.0.0:** Desacoplamiento de auditoría en LECTURA PURA (Read-Only), motor de políticas JSON per-volumen/subcarpeta, inspección en árbol ASCII, explorador TUI (`whiptail`), internacionalización (i18n) y arquitectura limpia de menú CLI.
+
+---
+
 ## Flujo de Trabajo Operativo v3.0
 
 ```bash
@@ -116,3 +126,4 @@ vguard selected explore
 # 6. Ejecutar Auto-Heal explícito para aplicar las políticas
 sudo vguard selected heal
 ```
+

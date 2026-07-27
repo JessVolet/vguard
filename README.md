@@ -95,6 +95,16 @@ Lock onto an active target volume with `vguard select <volume>` and execute subs
 
 ---
 
+## Release Versioning & Git Tags
+
+VGUARD follows Semantic Versioning (`vMAJOR.MINOR.PATCH`). Use git tags to inspect or checkout specific releases:
+
+- **v1.0.0:** Baseline storage provisioning, LVM volumes, metadata tracking, and basic self-healing.
+- **v2.0.0:** Introduction of Stateful Workspace Context (`vguard select`, `vguard selected`) and global batch healing (`vguard heal-all`).
+- **v3.0.0:** Decoupled Read-Only auditing, per-volume/subfolder JSON policy engine, nested ASCII tree inspection, TUI explorer (`whiptail`), i18n localization, and structured CLI menu architecture.
+
+---
+
 ## Example v3.0 Operational Workflow
 
 ```bash
@@ -116,3 +126,4 @@ vguard selected explore
 # 6. Explicitly run Auto-Heal to enforce policies
 sudo vguard selected heal
 ```
+

@@ -47,7 +47,9 @@ print_banner() {
     echo "  ╚██╗ ██╔╝██║   ██║██║  ██║██╔══██║██╔══██╗██║  ██║"
     echo "   ╚████╔╝ ╚██████╔╝╚█████╔╝██║  ██║██║  ██║██████╔╝"
     echo "    ╚═══╝   ╚═════╝  ╚════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ "
-    echo -e "         ${CLR_DIM}Guardia & Gestión de Almacenamiento v3.0 (TUI & Per-Volume Policies)${CLR_RESET}\n"
+    local subtitle
+    subtitle="$(get_banner_subtitle 2>/dev/null || echo "Volume Guard & Storage Infrastructure Engine v3.0")"
+    echo -e "         ${CLR_DIM}${subtitle}${CLR_RESET}\n"
 }
 
 msg_info() {

@@ -49,6 +49,26 @@ load_config() {
     PERM_POSIX_CONTAINER="${PERM_POSIX_CONTAINER:-770}"
     PERM_POSIX_NETWORK="${PERM_POSIX_NETWORK:-775}"
     PERM_POSIX_SYSTEM="${PERM_POSIX_SYSTEM:-750}"
+
+    detect_language
+}
+
+configurar_idioma() {
+    local target_lang="$1"
+    if [ -z "$target_lang" ]; then
+        msg_info "Language option required: 'en' or 'es'"
+        return 1
+    fi
+
+    local py_helper
+    py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
+    if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
+        python3 "$py_helper" set-lang "$CONFIG_FILE" "$target_lang"
+    fi
+
+    VGUARD_LANG="$target_lang"
+    CURRENT_LANG="$target_lang"
+    msg_success "$(t LANG_CHANGED) $target_lang"
 }
 
 obtener_politica_volumen() {
