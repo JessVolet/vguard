@@ -201,11 +201,134 @@ redimensionar_volumen() {
     msg_success "Redimensionamiento completado con éxito."
 }
 
+crear_subcarpeta_interactiva() {
+    local ruta_base="$1"
+    local vol_name="$2"
+    local cur_dir="${3:-$ruta_base}"
+    local sub_name="$4"
+
+    if [ -z "$sub_name" ]; then
+        read -p "Ingresa el nombre de la subcarpeta a crear: " sub_name
+    fi
+
+    if [ -z "$sub_name" ]; then
+        msg_error "Nombre de subcarpeta no válido."
+        return 1
+    fi
+
+    local target_path="$cur_dir/$sub_name"
+    if [ -d "$target_path" ]; then
+        msg_warning "La subcarpeta '$sub_name' ya existe en $cur_dir."
+        return 0
+    fi
+
+    # Cargar política base del volumen para referencia
+    obtener_politica_volumen "$vol_name" ""
+
+    echo -e "\n${CLR_BOLD}${CLR_CYAN}--- SELECCIÓN DE POLÍTICA DE SEGURIDAD PARA SUBCARPETA ---${CLR_RESET}"
+    echo "Carpeta a crear: $target_path"
+    echo "Opciones de política disponibles:"
+    echo "  1) Heredar política del volumen ($POL_OWNER:$POL_GROUP  dir:$POL_MODE_DIR  $POL_SELINUX)"
+    echo "  2) Preset Contenedores / App (1000:1000  dir:0775  container_file_t)"
+    echo "  3) Preset Compartido / Samba (1000:1000  dir:0775  samba_share_t)"
+    echo "  4) Preset Sistema / Restringido (root:root  dir:0750  systemd_system_unit_t)"
+    echo "  5) Custom / Personalizada (Marcar como política custom en metadatos)"
+    read -p "Selecciona una opción de política (1-5) [1]: " pol_choice
+
+    pol_choice="${pol_choice:-1}"
+
+    local sel_owner sel_mode_dir sel_mode_file sel_selinux is_custom="false" policy_type="inherited"
+
+    case "$pol_choice" in
+        2)
+            sel_owner="1000:1000"
+            sel_mode_dir="0775"
+            sel_mode_file="0664"
+            sel_selinux="container_file_t"
+            policy_type="preset_containers"
+            ;;
+        3)
+            sel_owner="1000:1000"
+            sel_mode_dir="0775"
+            sel_mode_file="0664"
+            sel_selinux="samba_share_t"
+            policy_type="preset_samba"
+            ;;
+        4)
+            sel_owner="root:root"
+            sel_mode_dir="0750"
+            sel_mode_file="0640"
+            sel_selinux="systemd_system_unit_t"
+            policy_type="preset_system"
+            ;;
+        5)
+            is_custom="true"
+            policy_type="custom"
+            echo -e "\n${CLR_BOLD}${CLR_YELLOW}--- ESPECIFICAR POLÍTICA CUSTOM ---${CLR_RESET}"
+            read -p "Propietario (usuario:grupo o uid:gid) [1000:1000]: " custom_owner
+            sel_owner="${custom_owner:-1000:1000}"
+
+            read -p "Modo POSIX para directorio (ej. 0775, 0770) [0775]: " custom_mode_dir
+            sel_mode_dir="${custom_mode_dir:-0775}"
+
+            read -p "Modo POSIX para archivos (ej. 0664, 0660) [0664]: " custom_mode_file
+            sel_mode_file="${custom_mode_file:-0664}"
+
+            read -p "Contexto SELinux [container_file_t]: " custom_selinux
+            sel_selinux="${custom_selinux:-container_file_t}"
+            ;;
+        *)
+            sel_owner="$POL_OWNER:$POL_GROUP"
+            sel_mode_dir="$POL_MODE_DIR"
+            sel_mode_file="$POL_MODE_FILE"
+            sel_selinux="$POL_SELINUX"
+            policy_type="inherited"
+            ;;
+    esac
+
+    mkdir -p "$target_path"
+
+    local rel_sub
+    rel_sub="$(realpath --relative-to="$ruta_base" "$target_path" 2>/dev/null || echo "$sub_name")"
+    [ "$rel_sub" = "." ] && rel_sub=""
+
+    # Guardar en vguard.conf en la sección subfolder_policies
+    establecer_politica_subcarpeta "$vol_name" "$rel_sub" --owner "$sel_owner" --mode "$sel_mode_dir" --mode-file "$sel_mode_file" --selinux "$sel_selinux"
+
+    # Escribir metadatos en .vguard_meta dentro de la nueva subcarpeta
+    local meta_path="$target_path/$META_FILE"
+    cat <<EOF > "$meta_path"
+# Metadatos autogenerados por VGUARD para subcarpeta
+VGUARD_VERSION="1.0"
+VGUARD_SERVICE_NAME="$vol_name/$rel_sub"
+VGUARD_POLICY_TYPE="$policy_type"
+VGUARD_OWNER="$sel_owner"
+VGUARD_POSIX="$sel_mode_dir"
+VGUARD_POSIX_FILE="$sel_mode_file"
+VGUARD_SELINUX="$sel_selinux"
+VGUARD_CREATED_AT="$(date -Iseconds)"
+EOF
+    chmod 600 "$meta_path" 2>/dev/null || true
+    if [ "$EUID" -eq 0 ]; then
+        chown root:root "$meta_path" 2>/dev/null || true
+    fi
+
+    # Aplicar permisos inmediatamente
+    aplicar_permisos "$target_path" "$sel_owner" "$sel_mode_dir" "$sel_selinux"
+
+    msg_success "Subcarpeta '$sub_name' creada exitosamente en: $target_path"
+    msg_info "Política ($policy_type) registrada en vguard.conf y .vguard_meta:"
+    echo "  - Propietario: $sel_owner"
+    echo "  - Modo Directorio: $sel_mode_dir"
+    echo "  - Modo Archivo: $sel_mode_file"
+    echo "  - Contexto SELinux: $sel_selinux"
+}
+
 crear_subcarpeta() {
     local target_input="$1"
     local subcarpeta="$2"
 
-    msg_section "CREAR SUBCARPETA CON HERENCIA DE POLÍTICAS"
+    msg_section "CREAR SUBCARPETA CON SELECCIÓN DE POLÍTICAS"
 
     if [ -z "$target_input" ]; then
         if cargar_contexto >/dev/null 2>&1; then
@@ -218,7 +341,7 @@ crear_subcarpeta() {
 
     local ruta_actual=""
     if [ -d "$target_input" ]; then
-        ruta_actual="$target_input"
+        ruta_actual="$(realpath "$target_input")"
     else
         local base_paths=(
             "$PATH_HDD_SERVICIOS/$target_input"
@@ -228,7 +351,7 @@ crear_subcarpeta() {
         )
         for path in "${base_paths[@]}"; do
             if [ -d "$path" ]; then
-                ruta_actual="$path"
+                ruta_actual="$(realpath "$path")"
                 break
             fi
         done
@@ -239,34 +362,10 @@ crear_subcarpeta() {
         return 1
     fi
 
-    local meta_file="$ruta_actual/$META_FILE"
-    if [ ! -f "$meta_file" ]; then
-        msg_warning "No se encontraron metadatos en $ruta_actual. Se usarán las políticas globales por defecto."
-    fi
+    local vol_name
+    vol_name="$(basename "$ruta_actual")"
 
-    VGUARD_OWNER="${VGUARD_OWNER:-$VGUARD_OWNER}"
-    VGUARD_POSIX="${VGUARD_POSIX:-770}"
-    VGUARD_SELINUX="${VGUARD_SELINUX:-container_file_t}"
-    # shellcheck source=/dev/null
-    source "$meta_file" 2>/dev/null
-
-    if [ -z "$subcarpeta" ]; then
-        read -p "Ingresa el nombre de la subcarpeta a crear (ej. repos, backups, config): " subcarpeta
-    fi
-
-    if [ -z "$subcarpeta" ]; then
-        msg_error "Subcarpeta no válida."
-        return 1
-    fi
-
-    local ruta_subcarpeta="$ruta_actual/$subcarpeta"
-    msg_info "Creando subcarpeta $ruta_subcarpeta..."
-    mkdir -p "$ruta_subcarpeta"
-
-    msg_info "Aplicando herencia de propietario ($VGUARD_OWNER), permisos ($VGUARD_POSIX) y SELinux ($VGUARD_SELINUX)..."
-    aplicar_permisos "$ruta_subcarpeta" "$VGUARD_OWNER" "$VGUARD_POSIX" "$VGUARD_SELINUX"
-
-    msg_success "Subcarpeta creada y asegurada correctamente en: $ruta_subcarpeta"
+    crear_subcarpeta_interactiva "$ruta_actual" "$vol_name" "$ruta_actual" "$subcarpeta"
 }
 
 gestionar_almacenamiento() {

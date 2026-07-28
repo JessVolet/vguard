@@ -109,16 +109,7 @@ EOF
                 read -p "Presiona Enter para continuar..." dummy
                 ;;
             alt-m)
-                echo -e "\n${CLR_BOLD}${CLR_CYAN}--- CREAR NUEVA SUBCARPETA ---${CLR_RESET}"
-                read -p "Ingresa el nombre de la subcarpeta: " sub_name
-                if [ -n "$sub_name" ]; then
-                    mkdir -p "$cur_dir/$sub_name"
-                    local rel_sub
-                    rel_sub="$(realpath --relative-to="$ruta_base" "$cur_dir/$sub_name" 2>/dev/null || echo "$sub_name")"
-                    obtener_politica_volumen "$vol_name" "$rel_sub"
-                    aplicar_permisos "$cur_dir/$sub_name" "$POL_OWNER:$POL_GROUP" "$POL_MODE_DIR" "$POL_SELINUX"
-                    msg_success "Subcarpeta creada y asegurada: $cur_dir/$sub_name"
-                fi
+                crear_subcarpeta_interactiva "$ruta_base" "$vol_name" "$cur_dir"
                 read -p "Presiona Enter para continuar..." dummy
                 ;;
             *)
@@ -286,16 +277,7 @@ EOF
             auditar_y_reparar_directorio "$cur_dir" "false"
             read -p "Presiona Enter para continuar..." dummy
         elif [ "$choice" = "m" ] || [ "$choice" = "M" ]; then
-            echo -e "\n${CLR_BOLD}${CLR_CYAN}--- CREAR NUEVA SUBCARPETA ---${CLR_RESET}"
-            read -p "Ingresa el nombre de la subcarpeta: " sub_name
-            if [ -n "$sub_name" ]; then
-                mkdir -p "$cur_dir/$sub_name"
-                local rel_sub
-                rel_sub="$(realpath --relative-to="$ruta_base" "$cur_dir/$sub_name" 2>/dev/null || echo "$sub_name")"
-                obtener_politica_volumen "$vol_name" "$rel_sub"
-                aplicar_permisos "$cur_dir/$sub_name" "$POL_OWNER:$POL_GROUP" "$POL_MODE_DIR" "$POL_SELINUX"
-                msg_success "Subcarpeta creada y asegurada: $cur_dir/$sub_name"
-            fi
+            crear_subcarpeta_interactiva "$ruta_base" "$vol_name" "$cur_dir"
             read -p "Presiona Enter para continuar..." dummy
         fi
     done
