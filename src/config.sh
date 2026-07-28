@@ -71,6 +71,31 @@ configurar_idioma() {
     msg_success "$(t LANG_CHANGED) $target_lang"
 }
 
+configurar_modo_explorer() {
+    local target_mode="$1"
+    if [ -z "$target_mode" ]; then
+        msg_info "Modos del explorador de VGUARD disponibles:"
+        msg_info "  - experimental : TUI dinámica interactiva estilo Yazi usando FZF (Lazy 1-nivel)"
+        msg_info "  - stable       : CLI liviano paginado basado en ls"
+        msg_info "Modo actual: ${CFG_EXPLORER_MODE:-experimental}"
+        return 0
+    fi
+
+    if [ "$target_mode" != "experimental" ] && [ "$target_mode" != "stable" ]; then
+        msg_error "Modo del explorador no válido. Elige 'experimental' o 'stable'."
+        return 1
+    fi
+
+    local py_helper
+    py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
+    if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
+        python3 "$py_helper" set-explorer-mode "$CONFIG_FILE" "$target_mode"
+    fi
+
+    CFG_EXPLORER_MODE="$target_mode"
+    msg_success "Modo del explorador cambiado a: $target_mode"
+}
+
 obtener_politica_volumen() {
     local target_vol="$1"
     local subfolder="${2:-}"

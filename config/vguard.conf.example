@@ -38,5 +38,6 @@
       "subfolder_policies": {}
     }
   },
-  "language": "en"
+  "language": "en",
+  "explorer_mode": "experimental"
 }

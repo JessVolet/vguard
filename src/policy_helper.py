@@ -43,6 +43,7 @@ def get_config_vars(config_path):
     default_group = data.get("default_group", "vsynlo")
     meta_file = data.get("meta_file", ".vguard_meta")
     language = data.get("language", "")
+    explorer_mode = data.get("explorer_mode", "experimental")
 
     print(f'VG_NAME="{vg_name}"')
     print(f'PATH_HDD_SERVICIOS="{p_hdd_servicios}"')
@@ -52,10 +53,16 @@ def get_config_vars(config_path):
     print(f'VGUARD_OWNER="{default_owner}:{default_group}"')
     print(f'META_FILE="{meta_file}"')
     print(f'CFG_LANGUAGE="{language}"')
+    print(f'CFG_EXPLORER_MODE="{explorer_mode}"')
 
 def set_config_lang(config_path, lang):
     data = load_json_config(config_path)
     data["language"] = lang
+    save_json_config(config_path, data)
+
+def set_config_explorer_mode(config_path, mode):
+    data = load_json_config(config_path)
+    data["explorer_mode"] = mode
     save_json_config(config_path, data)
 
 def get_volume_policy(config_path, volume_name_or_path, subfolder_relpath=None):
@@ -155,6 +162,8 @@ def main():
         get_volume_policy(sys.argv[2], sys.argv[3], subfolder)
     elif cmd == "set-lang" and len(sys.argv) >= 4:
         set_config_lang(sys.argv[2], sys.argv[3])
+    elif cmd == "set-explorer-mode" and len(sys.argv) >= 4:
+        set_config_explorer_mode(sys.argv[2], sys.argv[3])
     elif cmd == "set-policy" and len(sys.argv) >= 9:
         # set-policy <config_path> <volume_name> <owner> <group> <mode_dir> <mode_file> <selinux> [allow_sub]
         allow_sub = sys.argv[9].lower() == "true" if len(sys.argv) >= 10 else True

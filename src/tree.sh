@@ -5,6 +5,13 @@
 
 mostrar_arbol_volumen() {
     local target_input="$1"
+    local max_depth="${2:-2}"
+
+    # Si target_input es un número y no hay $2, usar target_input como max_depth
+    if [[ "$target_input" =~ ^[0-9]+$ ]] && [ -z "$2" ]; then
+        max_depth="$target_input"
+        target_input=""
+    fi
 
     if [ -z "$target_input" ]; then
         if cargar_contexto >/dev/null 2>&1; then
@@ -16,7 +23,7 @@ mostrar_arbol_volumen() {
 
     local ruta_target=""
     if [ -d "$target_input" ]; then
-        ruta_target="$target_input"
+        ruta_target="$(realpath "$target_input")"
     else
         local base_paths=(
             "$PATH_HDD_SERVICIOS/$target_input"
@@ -26,7 +33,7 @@ mostrar_arbol_volumen() {
         )
         for path in "${base_paths[@]}"; do
             if [ -d "$path" ]; then
-                ruta_target="$path"
+                ruta_target="$(realpath "$path")"
                 break
             fi
         done
@@ -41,11 +48,11 @@ mostrar_arbol_volumen() {
     volume_name="$(basename "$ruta_target")"
 
     draw_separator
-    echo -e "${CLR_BOLD}${CLR_BRIGHT_CYAN} VGUARD TREE EXPLORER // $ruta_target ${CLR_RESET}"
+    echo -e "${CLR_BOLD}${CLR_BRIGHT_CYAN} VGUARD TREE EXPLORER // $ruta_target (Profundidad: $max_depth) ${CLR_RESET}"
     draw_separator
 
     # Inspección de árbol en LECTURA PURA (Read-Only)
-    python3 - "$CONFIG_FILE" "$volume_name" "$ruta_target" << 'EOF'
+    python3 - "$CONFIG_FILE" "$volume_name" "$ruta_target" "$max_depth" << 'EOF'
 import os
 import sys
 import json
@@ -54,6 +61,10 @@ import subprocess
 config_file = sys.argv[1]
 volume_name = sys.argv[2]
 root_path = sys.argv[3]
+try:
+    max_depth = int(sys.argv[4])
+except (IndexError, ValueError):
+    max_depth = 2
 
 py_helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "policy_helper.py")
 
@@ -73,14 +84,12 @@ def get_node_info(path, rel_path=""):
         mode_octal = oct(st.st_mode & 0o7777)[2:].zfill(4)
         is_dir = os.path.isdir(path)
 
-        # SELinux context
+        # SELinux context de alta velocidad sin subprocesos
         selinux = "N/A"
         try:
-            res = subprocess.run(["ls", "-Zd", path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-            if res.returncode == 0:
-                parts = res.stdout.split()
-                if parts:
-                    selinux = parts[0].split(":")[2] if ":" in parts[0] else parts[0]
+            raw = os.getxattr(path, "security.selinux").decode("utf-8", errors="ignore").strip("\x00")
+            parts = raw.split(":")
+            selinux = parts[2] if len(parts) >= 3 else raw
         except Exception:
             pass
 
@@ -94,7 +103,7 @@ def get_node_info(path, rel_path=""):
     except Exception as e:
         return {"owner": "???", "uid_gid": "???", "mode": "???", "is_dir": False, "selinux": "???"}
 
-def walk_dir(path, prefix="", depth=0, max_depth=4):
+def walk_dir(path, prefix="", depth=1, max_depth=2):
     if depth > max_depth:
         return
 
@@ -121,16 +130,16 @@ def walk_dir(path, prefix="", depth=0, max_depth=4):
         info_str = f"[{info['owner']}  {info['mode']}  {info['selinux']}]"
         print(f"{prefix}{connector}{tag} {entry:<22} {info_str}")
 
-        if info["is_dir"]:
+        if info["is_dir"] and depth < max_depth:
             walk_dir(full_path, prefix + child_prefix, depth + 1, max_depth)
 
 root_info = get_node_info(root_path)
 print(f"<ROOT> {volume_name}/ [{root_info['owner']}  {root_info['mode']}  {root_info['selinux']}]")
-walk_dir(root_path)
+walk_dir(root_path, depth=1, max_depth=max_depth)
 
 EOF
     draw_separator
-    msg_info "Modo de Inspección 100% LECTURA (Read-Only). No se han modificado archivos."
+    msg_info "Modo de Inspección 100% LECTURA (Read-Only). Profundidad: $max_depth nivel(es)."
 }
 
 establecer_politica_subcarpeta() {

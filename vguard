@@ -216,17 +216,22 @@ menu_interactivo_categorizado() {
             4)
                 echo -e "\n${CLR_BOLD}--- SYSTEM CONFIGURATION & MAINTENANCE ---${CLR_RESET}"
                 echo "1) Set Language (en / es)"
-                echo "2) Self-Update VGUARD (git pull)"
-                echo "3) Uninstall VGUARD"
-                echo "4) Back to Main Menu"
-                read -p "Option (1-4): " sub_opt4
+                echo "2) Set Explorer Mode (experimental / stable)"
+                echo "3) Self-Update VGUARD (git pull)"
+                echo "4) Uninstall VGUARD"
+                echo "5) Back to Main Menu"
+                read -p "Option (1-5): " sub_opt4
                 case "$sub_opt4" in
                     1)
                         read -p "Enter language (en/es): " set_lang
                         configurar_idioma "$set_lang"
                         ;;
-                    2) actualizar_vguard ;;
-                    3) bash "$SCRIPT_DIR/uninstall.sh" ;;
+                    2)
+                        read -p "Enter explorer mode (experimental/stable): " set_mode
+                        configurar_modo_explorer "$set_mode"
+                        ;;
+                    3) actualizar_vguard ;;
+                    4) bash "$SCRIPT_DIR/uninstall.sh" ;;
                     *) ;;
                 esac
                 ;;
@@ -252,8 +257,12 @@ main() {
         config)
             if [ "$2" = "--lang" ] || [ "$2" = "-l" ]; then
                 configurar_idioma "$3"
+            elif [ "$2" = "--mode" ] || [ "$2" = "--explorer" ] || [ "$2" = "-m" ]; then
+                configurar_modo_explorer "$3"
             else
-                msg_info "Config options: vguard config --lang [en|es]"
+                msg_info "Config options:"
+                msg_info "  vguard config --lang [en|es]"
+                msg_info "  vguard config --mode [experimental|stable]"
             fi
             ;;
         use|select)
@@ -266,7 +275,7 @@ main() {
             mostrar_contexto_activo
             ;;
         tree)
-            mostrar_arbol_volumen "$2"
+            mostrar_arbol_volumen "$2" "$3"
             ;;
         explore)
             explorar_volumen_tui "$2"
@@ -281,7 +290,7 @@ main() {
                     mostrar_contexto_activo
                     ;;
                 tree)
-                    mostrar_arbol_volumen ""
+                    mostrar_arbol_volumen "" "$3"
                     ;;
                 explore)
                     explorar_volumen_tui ""
