@@ -140,8 +140,26 @@ def set_subfolder_policy(config_path, volume_name, subfolder_relpath, owner, gro
     vol_dict = data["managed_volumes"][target_vol_key]
     vol_dict.setdefault("subfolder_policies", {})
 
-    subfolder_relpath = subfolder_relpath.strip("/")
-    vol_dict["subfolder_policies"][subfolder_relpath] = {
+    clean_subfolder = subfolder_relpath.strip("/. ")
+
+    # Si la subruta representa la raíz del volumen, redirigir a la política global del volumen
+    if not clean_subfolder or clean_subfolder in [".", "/", ""]:
+        set_volume_policy(config_path, target_vol_key, owner, group, mode_dir, mode_file, selinux_context)
+        # Recargar para limpiar claves residuales en subfolder_policies
+        data = load_json_config(config_path)
+        sub_policies = data.get("managed_volumes", {}).get(target_vol_key, {}).get("subfolder_policies", {})
+        for invalid_key in [".", "", "/"]:
+            sub_policies.pop(invalid_key, None)
+        save_json_config(config_path, data)
+        return
+
+    # Sanitizar y remover cualquier clave de flag mal parseada si existiera
+    sub_policies = vol_dict["subfolder_policies"]
+    for k in list(sub_policies.keys()):
+        if k.startswith("-") or k in [".", "", "/"]:
+            del sub_policies[k]
+
+    sub_policies[clean_subfolder] = {
         "owner": str(owner),
         "group": str(group),
         "mode_dir": str(mode_dir),

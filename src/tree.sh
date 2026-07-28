@@ -145,7 +145,18 @@ EOF
 establecer_politica_subcarpeta() {
     local target_input="$1"
     local subpath="$2"
-    shift 2
+
+    if [[ "$subpath" == -* ]]; then
+        shift 1 2>/dev/null || true
+        subpath=""
+    else
+        shift 2 2>/dev/null || shift $#
+    fi
+
+    # Limpiar y sanitizar la subruta (convertir . o / a vacio para politica de raiz)
+    if [ -n "$subpath" ]; then
+        subpath=$(echo "$subpath" | sed -e 's/^\.\///g' -e 's/^\.$//g' -e 's/^\///g' -e 's/\/$//g')
+    fi
 
     local owner=""
     local mode_dir=""
