@@ -20,6 +20,10 @@ aplicar_permisos_recursivos_por_politica() {
 
     msg_info "Aplicando permisos POSIX a directorios ($target_mode_dir) y archivos ($target_mode_file)..."
     find "$ruta_root" -type d -exec chmod "$target_mode_dir" {} + 2>/dev/null || chmod -R "$target_mode_dir" "$ruta_root"
+    # Asegurar remoción de bits especiales SGID/SUID si la política especifica modo estándar 07xx
+    if [[ "$target_mode_dir" =~ ^0?[0-7]{3}$ ]]; then
+        find "$ruta_root" -type d -exec chmod ug-s {} + 2>/dev/null || true
+    fi
     find "$ruta_root" -type f ! -name "$META_FILE" -exec chmod "$target_mode_file" {} + 2>/dev/null || true
 
     # Si hay políticas de subcarpetas personalizadas declaradas
@@ -72,20 +76,8 @@ auditar_y_reparar_directorio() {
     local vol_name
     vol_name="$(basename "$ruta_target")"
 
-    # Obtener política declarativa per-volumen desde vguard.conf o .vguard_meta
+    # Obtener política declarativa SSOT desde vguard.conf (Single Source of Truth)
     obtener_politica_volumen "$vol_name" ""
-
-    local meta_path="$ruta_target/$META_FILE"
-    if [ -f "$meta_path" ]; then
-        VGUARD_OWNER=""
-        VGUARD_POSIX=""
-        VGUARD_SELINUX=""
-        # shellcheck source=/dev/null
-        source "$meta_path" 2>/dev/null
-        if [ -n "$VGUARD_OWNER" ]; then POL_OWNER="${VGUARD_OWNER%%:*}"; POL_GROUP="${VGUARD_OWNER#*:}"; fi
-        if [ -n "$VGUARD_POSIX" ]; then POL_MODE_DIR="$VGUARD_POSIX"; fi
-        if [ -n "$VGUARD_SELINUX" ]; then POL_SELINUX="$VGUARD_SELINUX"; fi
-    fi
 
     local target_owner="$POL_OWNER:$POL_GROUP"
     local target_posix="$POL_MODE_DIR"
@@ -94,7 +86,7 @@ auditar_y_reparar_directorio() {
     draw_separator
     msg_info "Evaluando estado declarativo para: ${CLR_BOLD}$vol_name${CLR_RESET}"
     msg_info "Ruta: $ruta_target"
-    msg_info "Política Declarativa Per-Volumen:"
+    msg_info "Política Declarativa Per-Volumen (SSOT):"
     echo "  - Propietario: $target_owner"
     echo "  - Permisos POSIX Directorio: $target_posix"
     echo "  - Contexto SELinux: $target_selinux"
@@ -106,6 +98,10 @@ auditar_y_reparar_directorio() {
         current_posix=$(stat -c '%a' "$ruta_target" 2>/dev/null || echo "Desconocido")
         current_selinux=$(ls -Zd "$ruta_target" 2>/dev/null | awk '{print $1}' | cut -d: -f3 || echo "Desconocido")
 
+        # Comparación inteligente de permisos POSIX (evalúa los últimos 3 dígitos octales)
+        local clean_current_posix="${current_posix: -3}"
+        local clean_target_posix="${target_posix: -3}"
+
         local tiene_desviacion=false
         echo -e "\n${CLR_BOLD}Detección de Desviaciones:${CLR_RESET}"
         if [ "$current_owner" != "$target_owner" ]; then
@@ -115,7 +111,7 @@ auditar_y_reparar_directorio() {
             echo -e "  - Propietario:  ${CLR_GREEN}$current_owner${CLR_RESET} [OK]"
         fi
 
-        if [ "$current_posix" != "$target_posix" ]; then
+        if [ "$clean_current_posix" != "$clean_target_posix" ]; then
             echo -e "  - Permisos POSIX: ${CLR_RED}$current_posix${CLR_RESET} (Esperado: $target_posix) ${CLR_RED}[X] DESVIACIÓN${CLR_RESET}"
             tiene_desviacion=true
         else
@@ -142,6 +138,13 @@ auditar_y_reparar_directorio() {
 
     # PILLAR 1: ESCRITURA EXPLÍCITA solo al ejecutar 'vguard heal'
     msg_section "EJECUTANDO REPARACIÓN DE ESTADO PER-VOLUMEN (AUTO-HEAL EXPLÍCITO)"
+
+    # Sincronizar archivo .vguard_meta local desde la fuente de verdad global (SSOT)
+    local meta_path="$ruta_target/$META_FILE"
+    if [ -f "$create_sh_path" ]; then
+        escribir_metadatos "$ruta_target" "$vol_name" "custom" "$target_owner" "$target_posix" "$target_selinux" "N/A" 2>/dev/null || true
+    fi
+
     aplicar_permisos_recursivos_por_politica "$ruta_target" "$vol_name"
 
     if [ -f "$meta_path" ]; then

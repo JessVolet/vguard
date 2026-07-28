@@ -49,9 +49,14 @@ listar_volumenes_gestionados() {
             source "$meta_file" 2>/dev/null
 
             local service_name="${VGUARD_SERVICE_NAME:-$(basename "$dir")}"
-            local tier="${VGUARD_TIER:-${TIPO_USO:-Desconocido}}"
-            local exp_owner="${VGUARD_OWNER:-$OWNER_CORRECTO}"
-            local exp_posix="${VGUARD_POSIX:-$PERMISO_POSIX}"
+
+            # Obtener política declarativa global SSOT desde vguard.conf
+            obtener_politica_volumen "$service_name" ""
+            local exp_owner="$POL_OWNER:$POL_GROUP"
+            local exp_posix="$POL_MODE_DIR"
+
+            # Si existía metadato local, cargarlo solo para el Tier/Nombre visual si aplica
+            local tier="${VGUARD_TIER:-${TIPO_USO:-custom}}"
 
             local is_active=""
             if [ -n "$active_mount" ] && [ "$dir" = "$active_mount" ]; then
@@ -68,8 +73,12 @@ listar_volumenes_gestionados() {
             local actual_posix
             actual_posix=$(stat -c '%a' "$dir" 2>/dev/null || echo "???")
 
+            # Comparación inteligente de permisos POSIX (máscara de los últimos 3 dígitos octales, ignora SGID/Sticky)
+            local clean_actual_posix="${actual_posix: -3}"
+            local clean_exp_posix="${exp_posix: -3}"
+
             local health_status="${CLR_GREEN}HEALTHY${CLR_RESET}"
-            if [ "$actual_owner" != "$exp_owner" ] || [ "$actual_posix" != "$exp_posix" ]; then
+            if [ "$actual_owner" != "$exp_owner" ] || [ "$clean_actual_posix" != "$clean_exp_posix" ]; then
                 health_status="${CLR_RED}DRIFTED${CLR_RESET}"
             fi
 
