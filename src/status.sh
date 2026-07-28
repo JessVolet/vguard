@@ -67,18 +67,20 @@ listar_volumenes_gestionados() {
             disk_usage=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
             [ -z "$disk_usage" ] && disk_usage="N/A"
 
-            local actual_owner
-            actual_owner=$(stat -c '%U:%G' "$dir" 2>/dev/null || echo "???")
-
-            local actual_posix
-            actual_posix=$(stat -c '%a' "$dir" 2>/dev/null || echo "???")
-
-            # Comparación inteligente de permisos POSIX (máscara de los últimos 3 dígitos octales, ignora SGID/Sticky)
-            local clean_actual_posix="${actual_posix: -3}"
-            local clean_exp_posix="${exp_posix: -3}"
+            # Validar propietario de forma inteligente (normaliza UID numérico vs nombre)
+            local py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
+            local owner_matches="false"
+            if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
+                owner_matches=$(python3 "$py_helper" check-owner "$dir" "$exp_owner" 2>/dev/null || echo "false")
+            else
+                local actual_num=$(stat -c '%u:%g' "$dir" 2>/dev/null || echo "")
+                if [ "$actual_owner" = "$exp_owner" ] || [ "$actual_num" = "$exp_owner" ]; then
+                    owner_matches="true"
+                fi
+            fi
 
             local health_status="${CLR_GREEN}HEALTHY${CLR_RESET}"
-            if [ "$actual_owner" != "$exp_owner" ] || [ "$clean_actual_posix" != "$clean_exp_posix" ]; then
+            if [ "$owner_matches" != "true" ] || [ "$clean_actual_posix" != "$clean_exp_posix" ]; then
                 health_status="${CLR_RED}DRIFTED${CLR_RESET}"
             fi
 

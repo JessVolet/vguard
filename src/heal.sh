@@ -102,9 +102,20 @@ auditar_y_reparar_directorio() {
         local clean_current_posix="${current_posix: -3}"
         local clean_target_posix="${target_posix: -3}"
 
+        local py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
+        local owner_matches="false"
+        if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
+            owner_matches=$(python3 "$py_helper" check-owner "$ruta_target" "$target_owner" 2>/dev/null || echo "false")
+        else
+            local current_num=$(stat -c '%u:%g' "$ruta_target" 2>/dev/null || echo "")
+            if [ "$current_owner" = "$target_owner" ] || [ "$current_num" = "$target_owner" ]; then
+                owner_matches="true"
+            fi
+        fi
+
         local tiene_desviacion=false
         echo -e "\n${CLR_BOLD}Detección de Desviaciones:${CLR_RESET}"
-        if [ "$current_owner" != "$target_owner" ]; then
+        if [ "$owner_matches" != "true" ]; then
             echo -e "  - Propietario:  ${CLR_RED}$current_owner${CLR_RESET} (Esperado: $target_owner) ${CLR_RED}[X] DESVIACIÓN${CLR_RESET}"
             tiene_desviacion=true
         else

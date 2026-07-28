@@ -168,6 +168,44 @@ def set_subfolder_policy(config_path, volume_name, subfolder_relpath, owner, gro
     }
     save_json_config(config_path, data)
 
+def check_owner_match(path, expected_owner):
+    if not os.path.exists(path):
+        print("false")
+        return
+    try:
+        st = os.stat(path)
+        actual_uid, actual_gid = st.st_uid, st.st_gid
+
+        parts = str(expected_owner).split(":", 1) if ":" in str(expected_owner) else [expected_owner, expected_owner]
+        exp_u, exp_g = parts[0], parts[1]
+
+        import pwd, grp
+        try:
+            target_uid = int(exp_u)
+        except ValueError:
+            try:
+                target_uid = pwd.getpwnam(exp_u).pw_uid
+            except KeyError:
+                target_uid = None
+
+        try:
+            target_gid = int(exp_g)
+        except ValueError:
+            try:
+                target_gid = grp.getgrnam(exp_g).gr_gid
+            except KeyError:
+                target_gid = None
+
+        u_ok = (target_uid is None) or (actual_uid == target_uid)
+        g_ok = (target_gid is None) or (actual_gid == target_gid)
+
+        if u_ok and g_ok:
+            print("true")
+        else:
+            print("false")
+    except Exception:
+        print("false")
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(1)
@@ -175,6 +213,8 @@ def main():
     cmd = sys.argv[1]
     if cmd == "get-vars" and len(sys.argv) >= 3:
         get_config_vars(sys.argv[2])
+    elif cmd == "check-owner" and len(sys.argv) >= 4:
+        check_owner_match(sys.argv[2], sys.argv[3])
     elif cmd == "get-policy" and len(sys.argv) >= 4:
         subfolder = sys.argv[4] if len(sys.argv) >= 5 else None
         get_volume_policy(sys.argv[2], sys.argv[3], subfolder)
