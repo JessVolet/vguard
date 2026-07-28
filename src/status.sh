@@ -67,6 +67,15 @@ listar_volumenes_gestionados() {
             disk_usage=$(du -sh "$dir" 2>/dev/null | awk '{print $1}')
             [ -z "$disk_usage" ] && disk_usage="N/A"
 
+            local actual_owner
+            actual_owner=$(stat -c '%U:%G' "$dir" 2>/dev/null || echo "???")
+
+            local actual_posix
+            actual_posix=$(stat -c '%a' "$dir" 2>/dev/null || echo "???")
+
+            local clean_actual_posix="${actual_posix: -3}"
+            local clean_exp_posix="${exp_posix: -3}"
+
             # Validar propietario de forma inteligente (normaliza UID numérico vs nombre)
             local py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
             local owner_matches="false"

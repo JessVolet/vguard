@@ -152,7 +152,7 @@ auditar_y_reparar_directorio() {
 
     # Sincronizar archivo .vguard_meta local desde la fuente de verdad global (SSOT)
     local meta_path="$ruta_target/$META_FILE"
-    if [ -f "$create_sh_path" ]; then
+    if command -v escribir_metadatos >/dev/null 2>&1; then
         escribir_metadatos "$ruta_target" "$vol_name" "custom" "$target_owner" "$target_posix" "$target_selinux" "N/A" 2>/dev/null || true
     fi
 
