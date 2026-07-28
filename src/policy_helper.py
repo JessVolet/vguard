@@ -287,6 +287,63 @@ def check_owner_match(path, expected_owner):
     except Exception:
         print("false")
 
+def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
+    if not os.path.exists(abs_path):
+        sys.stderr.write(f"Error: La ruta '{abs_path}' no existe en disco.\n")
+        sys.exit(1)
+
+    try:
+        st = os.stat(abs_path)
+        import pwd, grp
+        try: user = pwd.getpwuid(st.st_uid).pw_name
+        except KeyError: user = str(st.st_uid)
+        try: group = grp.getgrgid(st.st_gid).gr_name
+        except KeyError: group = str(st.st_gid)
+
+        mode_dir = oct(st.st_mode & 0o7777)[2:].zfill(4)
+
+        mode_file = "0664"
+        if os.path.isdir(abs_path):
+            try:
+                with os.scandir(abs_path) as it:
+                    for entry in it:
+                        if entry.is_file(follow_symlinks=False):
+                            fst = entry.stat(follow_symlinks=False)
+                            mode_file = oct(fst.st_mode & 0o7777)[2:].zfill(4)
+                            break
+            except Exception:
+                pass
+        elif os.path.isfile(abs_path):
+            mode_file = mode_dir
+            mode_dir = "0775"
+
+        selinux = "container_file_t"
+        try:
+            raw = os.getxattr(abs_path, "security.selinux").decode("utf-8", errors="ignore").strip("\x00")
+            parts = raw.split(":")
+            selinux = parts[2] if len(parts) >= 3 else raw
+        except Exception:
+            pass
+
+        clean_sub = subpath_rel.strip("/. ")
+
+        if not clean_sub or clean_sub in [".", "/", ""]:
+            set_volume_policy(config_path, volume_name, user, group, mode_dir, mode_file, selinux)
+        else:
+            set_subfolder_policy(config_path, volume_name, clean_sub, user, group, mode_dir, mode_file, selinux)
+
+        print(json.dumps({
+            "target": clean_sub if clean_sub else ".",
+            "owner": f"{user}:{group}",
+            "mode_dir": mode_dir,
+            "mode_file": mode_file,
+            "selinux_context": selinux
+        }))
+
+    except Exception as e:
+        sys.stderr.write(f"Error al inspeccionar estado en disco: {e}\n")
+        sys.exit(1)
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(1)
@@ -305,6 +362,10 @@ def main():
         print(json.dumps(PROFILES))
     elif cmd == "set-explorer-mode" and len(sys.argv) >= 4:
         set_config_explorer_mode(sys.argv[2], sys.argv[3])
+    elif cmd == "save-policy" and len(sys.argv) >= 5:
+        # save-policy <config_path> <volume_name> <abs_path> [subpath_rel]
+        subpath_rel = sys.argv[5] if len(sys.argv) >= 6 else ""
+        save_disk_as_policy(sys.argv[2], sys.argv[3], sys.argv[4], subpath_rel)
     elif cmd == "set-policy" and len(sys.argv) >= 9:
         # set-policy <config_path> <volume_name> <owner> <group> <mode_dir> <mode_file> <selinux> [allow_sub]
         allow_sub = sys.argv[9].lower() == "true" if len(sys.argv) >= 10 else True

@@ -13,9 +13,9 @@ explorar_fzf_lazy() {
         # 1. Obtiene únicamente los archivos/directorios del nivel actual (sin recursividad)
         # Formatea: [TIPO] Nombre | [USER:GROUP PERMS SELINUX]
         local fzf_out
-        fzf_out=$(python3 - "$cur_dir" "$ruta_base" << 'EOF' | fzf --expect=alt-p,alt-h,alt-m \
+        fzf_out=$(python3 - "$cur_dir" "$ruta_base" << 'EOF' | fzf --expect=alt-p,alt-h,alt-m,alt-s \
             --header="VGUARD EXPLORER (MODO EXPERIMENTAL): $vol_name ($cur_dir)
-[ENTER]: Navegar | [ALT+P]: Asignar Política | [ALT+H]: Heal | [ALT+M]: Crear Subcarpeta | [ESC/Q]: Salir" \
+[ENTER]: Navegar | [ALT+P]: Asignar Política | [ALT+S]: Guardar Estado | [ALT+H]: Heal | [ALT+M]: Crear Subcarpeta | [ESC/Q]: Salir" \
             --ansi --reverse --height=80% --prompt="Posición: $cur_dir > "
 import os, stat, pwd, grp, sys
 
@@ -106,6 +106,17 @@ EOF
 
                 echo -e "\n${CLR_BOLD}${CLR_CYAN}--- EJECUTANDO AUTO-HEAL EN CALIENTE (EXPERIMENTAL) ---${CLR_RESET}"
                 auditar_y_reparar_directorio "$target_for_heal" "false"
+                read -p "Presiona Enter para continuar..." dummy
+                ;;
+            alt-s)
+                local target_for_save="$target_path"
+                [ ! -e "$target_for_save" ] && target_for_save="$cur_dir"
+
+                rel_p="$(realpath --relative-to="$ruta_base" "$target_for_save" 2>/dev/null || echo ".")"
+                [ "$rel_p" = "." ] && rel_p=""
+
+                echo -e "\n${CLR_BOLD}${CLR_CYAN}--- GUARDAR ESTADO FÍSICO COMO POLÍTICA (SAVE-POLICY) ---${CLR_RESET}"
+                guardar_politica_desde_disco "$vol_name" "$rel_p"
                 read -p "Presiona Enter para continuar..." dummy
                 ;;
             alt-m)

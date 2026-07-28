@@ -36,6 +36,27 @@
         "allow_subfolder_overrides": false
       },
       "subfolder_policies": {}
+    },
+    "test_save": {
+      "tier": "custom",
+      "path": "/mnt/sda1/servicios/test_save",
+      "policy": {
+        "owner": "vsynlo",
+        "group": "vsynlo",
+        "mode_dir": "0770",
+        "mode_file": "0660",
+        "selinux_context": "container_file_t",
+        "allow_subfolder_overrides": true
+      },
+      "subfolder_policies": {
+        "storage": {
+          "owner": "vsynlo",
+          "group": "vsynlo",
+          "mode_dir": "0775",
+          "mode_file": "0664",
+          "selinux_context": "user_home_t"
+        }
+      }
     }
   },
   "language": "en",

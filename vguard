@@ -305,6 +305,9 @@ main() {
                 set-profile|profile)
                     asignar_perfil_servicio "" "$3"
                     ;;
+                save-policy|learn)
+                    guardar_politica_desde_disco "" "$3"
+                    ;;
                 resize|extend)
                     redimensionar_volumen "" "$3"
                     ;;
@@ -377,6 +380,9 @@ main() {
             ;;
         set-profile|profile)
             asignar_perfil_servicio "$2" "$3"
+            ;;
+        save-policy|learn)
+            guardar_politica_desde_disco "$2" "$3"
             ;;
         logs)
             auditar_logs_selinux "$2"

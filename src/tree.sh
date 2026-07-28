@@ -241,3 +241,92 @@ establecer_politica_subcarpeta() {
     echo "  - Modo Archivo: $mode_file"
     echo "  - Contexto SELinux: $selinux"
 }
+
+guardar_politica_desde_disco() {
+    local target_input="$1"
+    local subpath="$2"
+
+    if [ -z "$target_input" ]; then
+        if cargar_contexto >/dev/null 2>&1; then
+            target_input="$CTX_MOUNT_POINT"
+        else
+            read -p "Ingresa el nombre o ruta del servicio principal: " target_input
+        fi
+    fi
+
+    local ruta_base=""
+    if [ -d "$target_input" ]; then
+        ruta_base="$(realpath "$target_input")"
+    else
+        local base_paths=(
+            "$PATH_HDD_SERVICIOS/$target_input"
+            "$PATH_NVME_FAST/$target_input"
+            "$PATH_HDD_COMPARTIDO/$target_input"
+            "$PATH_HDD_SISTEMA/$target_input"
+        )
+        for path in "${base_paths[@]}"; do
+            if [ -d "$path" ]; then
+                ruta_base="$(realpath "$path")"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$ruta_base" ] || [ ! -d "$ruta_base" ]; then
+        msg_error "El directorio o servicio '$target_input' no existe."
+        return 1
+    fi
+
+    local vol_name
+    vol_name="$(basename "$ruta_base")"
+
+    local abs_target="$ruta_base"
+    local clean_rel=""
+
+    if [ -n "$subpath" ] && [ "$subpath" != "." ] && [ "$subpath" != "/" ]; then
+        abs_target="$(realpath "$ruta_base/$subpath" 2>/dev/null || echo "$ruta_base/$subpath")"
+        clean_rel="$(realpath --relative-to="$ruta_base" "$abs_target" 2>/dev/null || echo "$subpath")"
+    fi
+
+    if [ ! -e "$abs_target" ]; then
+        msg_error "La ruta objetivo '$abs_target' no existe en el sistema de archivos."
+        return 1
+    fi
+
+    msg_info "Capturando estado físico actual de la ruta: $abs_target..."
+
+    local py_helper
+    py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
+
+    if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
+        local json_out
+        json_out=$(python3 "$py_helper" save-policy "$CONFIG_FILE" "$vol_name" "$abs_target" "$clean_rel")
+        if [ $? -eq 0 ] && [ -n "$json_out" ]; then
+            local p_owner p_mode_dir p_mode_file p_selinux p_target
+            p_owner=$(echo "$json_out" | jq -r '.owner // "vsynlo"' 2>/dev/null || echo "vsynlo")
+            p_mode_dir=$(echo "$json_out" | jq -r '.mode_dir // "0775"' 2>/dev/null || echo "0775")
+            p_mode_file=$(echo "$json_out" | jq -r '.mode_file // "0664"' 2>/dev/null || echo "0664")
+            p_selinux=$(echo "$json_out" | jq -r '.selinux_context // "container_file_t"' 2>/dev/null || echo "container_file_t")
+            p_target=$(echo "$json_out" | jq -r '.target // "."' 2>/dev/null || echo ".")
+
+            # Sincronizar metadatos locales .vguard_meta
+            if command -v escribir_metadatos >/dev/null 2>&1; then
+                escribir_metadatos "$abs_target" "$vol_name/$p_target" "custom" "$p_owner" "$p_mode_dir" "$p_selinux" "N/A" 2>/dev/null || true
+            fi
+
+            msg_success "Política aprendida y guardada exitosamente en vguard.conf y .vguard_meta:"
+            echo "  - Objetivo: $vol_name/$p_target"
+            echo "  - Propietario capturado: $p_owner"
+            echo "  - Modo Directorio: $p_mode_dir"
+            echo "  - Modo Archivo: $p_mode_file"
+            echo "  - Contexto SELinux: $p_selinux"
+            msg_info "Cualquier ejecución futura de 'vguard selected heal' respetará esta política aprendida."
+        else
+            msg_error "No se pudo capturar la política desde disco."
+            return 1
+        fi
+    else
+        msg_error "Se requiere Python3 para guardar políticas desde disco."
+        return 1
+    fi
+}
