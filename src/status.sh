@@ -140,6 +140,78 @@ sanar_todos_los_volumenes() {
     done
 
     draw_separator
-    msg_success "Proceso heal-all completado. Se auditaron y restauraron $processed_count volúmenes."
+    msg_success "Proceso Heal-All completado. Se procesaron $processed_count volúmenes."
+}
+
+auditar_logs_selinux() {
+    local target_input="$1"
+
+    if [ -z "$target_input" ]; then
+        if cargar_contexto >/dev/null 2>&1; then
+            target_input="$CTX_MOUNT_POINT"
+        else
+            read -p "Ingresa el nombre o ruta del servicio para inspeccionar logs SELinux: " target_input
+        fi
+    fi
+
+    local ruta_target=""
+    if [ -d "$target_input" ]; then
+        ruta_target="$(realpath "$target_input")"
+    else
+        local base_paths=(
+            "$PATH_HDD_SERVICIOS/$target_input"
+            "$PATH_NVME_FAST/$target_input"
+            "$PATH_HDD_COMPARTIDO/$target_input"
+            "$PATH_HDD_SISTEMA/$target_input"
+        )
+        for path in "${base_paths[@]}"; do
+            if [ -d "$path" ]; then
+                ruta_target="$(realpath "$path")"
+                break
+            fi
+        done
+    fi
+
+    local vol_name="$(basename "${ruta_target:-$target_input}")"
+
+    draw_separator
+    echo -e "${CLR_BOLD}${CLR_CYAN} AUDITORÍA Y LOGS SELINUX (AVC DENIALS) // $vol_name ${CLR_RESET}"
+    draw_separator
+
+    local avc_found=false
+
+    if command -v ausearch >/dev/null 2>&1; then
+        msg_info "Buscando denegaciones AVC con ausearch..."
+        local logs_avc
+        logs_avc=$(ausearch -m avc 2>/dev/null | grep -E "$vol_name|$ruta_target" | tail -n 20 || true)
+        if [ -n "$logs_avc" ]; then
+            echo -e "${CLR_RED}$logs_avc${CLR_RESET}"
+            avc_found=true
+        fi
+    fi
+
+    if [ "$avc_found" = "false" ] && [ -f "/var/log/audit/audit.log" ]; then
+        msg_info "Analizando /var/log/audit/audit.log..."
+        local logs_audit
+        logs_audit=$(grep -i "denied" /var/log/audit/audit.log 2>/dev/null | grep -E "$vol_name|$ruta_target" | tail -n 20 || true)
+        if [ -n "$logs_audit" ]; then
+            echo -e "${CLR_YELLOW}$logs_audit${CLR_RESET}"
+            avc_found=true
+        fi
+    fi
+
+    if [ "$avc_found" = "false" ] && command -v journalctl >/dev/null 2>&1; then
+        msg_info "Consultando journalctl en busca de auditd denegados..."
+        local logs_journal
+        logs_journal=$(journalctl -t audit -o cat 2>/dev/null | grep -i "denied" | grep -E "$vol_name|$ruta_target" | tail -n 15 || true)
+        if [ -n "$logs_journal" ]; then
+            echo -e "${CLR_YELLOW}$logs_journal${CLR_RESET}"
+            avc_found=true
+        fi
+    fi
+
+    if [ "$avc_found" = "false" ]; then
+        msg_success "No se detectaron denegaciones SELinux (AVC Denials) para '$vol_name'."
+    fi
     draw_separator
 }

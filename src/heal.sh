@@ -47,9 +47,13 @@ for rel_sub, pol in sub_policies.items():
         owner = f"{pol.get('owner', '1000')}:{pol.get('group', '1000')}"
         mode_dir = pol.get("mode_dir", "0775")
         mode_file = pol.get("mode_file", "0664")
+        selinux = pol.get("selinux_context", "container_file_t")
+
         subprocess.run(["chown", "-R", owner, sub_abs], stderr=subprocess.DEVNULL)
-        subprocess.run(["chmod", mode_dir, sub_abs], stderr=subprocess.DEVNULL)
+        subprocess.run(["find", sub_abs, "-type", "d", "-exec", "chmod", mode_dir, "{}", "+"], stderr=subprocess.DEVNULL)
         subprocess.run(["find", sub_abs, "-type", "f", "-exec", "chmod", mode_file, "{}", "+"], stderr=subprocess.DEVNULL)
+        if selinux and selinux != "N/A":
+            subprocess.run(["chcon", "-R", "-t", selinux, sub_abs], stderr=subprocess.DEVNULL)
 EOF
 
     # Aplicar contexto SELinux

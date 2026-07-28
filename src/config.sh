@@ -96,6 +96,50 @@ configurar_modo_explorer() {
     msg_success "Modo del explorador cambiado a: $target_mode"
 }
 
+asignar_perfil_servicio() {
+    local target_vol="$1"
+    local perfil="$2"
+
+    if [ -z "$target_vol" ]; then
+        if cargar_contexto >/dev/null 2>&1; then
+            target_vol="$CTX_SERVICE_NAME"
+        else
+            read -p "Ingresa el nombre del servicio u objetivo: " target_vol
+        fi
+    fi
+
+    if [ -z "$perfil" ]; then
+        echo -e "\n${CLR_BOLD}${CLR_CYAN}--- PERFILES DE SERVICIO DISPONIBLES EN VGUARD ---${CLR_RESET}"
+        echo "1) datastore  : Bases de datos, backups, logs privados (Strict 0770/0660)"
+        echo "2) webapp     : Nginx, PHP, Node.js, Web Servers (0755/0644 con storage 0775)"
+        echo "3) shared-app : Contenedores compartidos mediante GID comun (0775/0664)"
+        read -p "Selecciona un perfil (1-3) o nombre (datastore/webapp/shared-app): " choice_prof
+        case "$choice_prof" in
+            1) perfil="datastore" ;;
+            2) perfil="webapp" ;;
+            3) perfil="shared-app" ;;
+            *) perfil="$choice_prof" ;;
+        esac
+    fi
+
+    if [ -z "$perfil" ]; then
+        msg_error "Perfil no especificado."
+        return 1
+    fi
+
+    local py_helper
+    py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
+
+    if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
+        python3 "$py_helper" set-profile "$CONFIG_FILE" "$target_vol" "$perfil"
+        msg_success "Perfil de servicio '$perfil' asignado correctamente a '$target_vol'."
+        msg_info "Ejecuta 'vguard selected heal' para aplicar los permisos del perfil en disco."
+    else
+        msg_error "Se requiere Python3 para guardar perfiles en vguard.conf."
+        return 1
+    fi
+}
+
 obtener_politica_volumen() {
     local target_vol="$1"
     local subfolder="${2:-}"

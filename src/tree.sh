@@ -126,9 +126,20 @@ def walk_dir(path, prefix="", depth=1, max_depth=2):
 
         info = get_node_info(full_path, rel_path)
         tag = "<DIR> " if info["is_dir"] else "      "
-        
+
+        hint = ""
+        if info["is_dir"]:
+            mode = info["mode"]
+            clean_m = mode[-3:] if len(mode) >= 3 else mode
+            if entry in ["storage", "cache", "tmp", "logs", "uploads"] or clean_m in ["775", "777"]:
+                hint = " (WRITABLE)"
+            elif clean_m in ["755"]:
+                hint = " (READ-ONLY WEB)"
+            elif clean_m in ["770", "700"]:
+                hint = " (STRICT PRIVATE)"
+
         info_str = f"[{info['owner']}  {info['mode']}  {info['selinux']}]"
-        print(f"{prefix}{connector}{tag} {entry:<22} {info_str}")
+        print(f"{prefix}{connector}{tag} {entry:<22} {info_str}{hint}")
 
         if info["is_dir"] and depth < max_depth:
             walk_dir(full_path, prefix + child_prefix, depth + 1, max_depth)

@@ -16,6 +16,27 @@ DEFAULT_POLICY = {
     "allow_subfolder_overrides": True
 }
 
+PROFILES = {
+    "datastore": {
+        "mode_dir": "0770",
+        "mode_file": "0660",
+        "selinux_context": "container_file_t",
+        "description": "Bases de datos, backups, logs privados (Strict 0770/0660)"
+    },
+    "webapp": {
+        "mode_dir": "0755",
+        "mode_file": "0644",
+        "selinux_context": "container_file_t",
+        "description": "Nginx, PHP, Node.js, Web Servers (0755/0644 con storage 0775)"
+    },
+    "shared-app": {
+        "mode_dir": "0775",
+        "mode_file": "0664",
+        "selinux_context": "container_file_t",
+        "description": "Contenedores compartidos mediante GID comun (0775/0664)"
+    }
+}
+
 def load_json_config(config_path):
     if not os.path.isfile(config_path):
         return {}
@@ -79,6 +100,11 @@ def get_volume_policy(config_path, volume_name_or_path, subfolder_relpath=None):
     if target_vol and "policy" in target_vol:
         policy.update(target_vol["policy"])
 
+    if target_vol and "profile" in target_vol:
+        policy["profile"] = target_vol["profile"]
+    else:
+        policy["profile"] = "datastore"
+
     if subfolder_relpath and target_vol and target_vol.get("policy", {}).get("allow_subfolder_overrides", True):
         sub_policies = target_vol.get("subfolder_policies", {})
         subfolder_relpath = subfolder_relpath.strip("/")
@@ -94,6 +120,61 @@ def get_volume_policy(config_path, volume_name_or_path, subfolder_relpath=None):
             policy.update(sub_policies[matched_path])
 
     print(json.dumps(policy))
+
+def set_volume_profile(config_path, volume_name, profile_name):
+    if profile_name not in PROFILES:
+        sys.stderr.write(f"Perfil invalido '{profile_name}'. Opciones: {list(PROFILES.keys())}\n")
+        sys.exit(1)
+
+    data = load_json_config(config_path)
+    managed = data.setdefault("managed_volumes", {})
+
+    target_vol_key = None
+    for name, vol_info in managed.items():
+        if name == volume_name or vol_info.get("path") == volume_name or os.path.basename(vol_info.get("path", "")) == volume_name:
+            target_vol_key = name
+            break
+
+    if not target_vol_key:
+        target_vol_key = volume_name
+        managed[target_vol_key] = {
+            "tier": "custom",
+            "path": f"/mnt/sda1/servicios/{volume_name}",
+            "policy": dict(DEFAULT_POLICY),
+            "subfolder_policies": {}
+        }
+
+    vol_dict = managed[target_vol_key]
+    vol_dict["profile"] = profile_name
+
+    prof = PROFILES[profile_name]
+    vol_dict.setdefault("policy", {})
+    vol_dict["policy"]["mode_dir"] = prof["mode_dir"]
+    vol_dict["policy"]["mode_file"] = prof["mode_file"]
+    vol_dict["policy"]["selinux_context"] = prof["selinux_context"]
+
+    if profile_name == "webapp":
+        sub_p = vol_dict.setdefault("subfolder_policies", {})
+        curr_owner = vol_dict["policy"].get("owner", "vsynlo")
+        curr_group = vol_dict["policy"].get("group", "vsynlo")
+        if "storage" not in sub_p:
+            sub_p["storage"] = {
+                "owner": curr_owner,
+                "group": "33",
+                "mode_dir": "0775",
+                "mode_file": "0664",
+                "selinux_context": "container_file_t"
+            }
+        if "bootstrap/cache" not in sub_p:
+            sub_p["bootstrap/cache"] = {
+                "owner": curr_owner,
+                "group": "33",
+                "mode_dir": "0775",
+                "mode_file": "0664",
+                "selinux_context": "container_file_t"
+            }
+
+    save_json_config(config_path, data)
 
 def set_volume_policy(config_path, volume_name, owner, group, mode_dir, mode_file, selinux_context, allow_subfolder_overrides=True):
     data = load_json_config(config_path)
@@ -218,8 +299,10 @@ def main():
     elif cmd == "get-policy" and len(sys.argv) >= 4:
         subfolder = sys.argv[4] if len(sys.argv) >= 5 else None
         get_volume_policy(sys.argv[2], sys.argv[3], subfolder)
-    elif cmd == "set-lang" and len(sys.argv) >= 4:
-        set_config_lang(sys.argv[2], sys.argv[3])
+    elif cmd == "set-profile" and len(sys.argv) >= 4:
+        set_volume_profile(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif cmd == "get-profiles":
+        print(json.dumps(PROFILES))
     elif cmd == "set-explorer-mode" and len(sys.argv) >= 4:
         set_config_explorer_mode(sys.argv[2], sys.argv[3])
     elif cmd == "set-policy" and len(sys.argv) >= 9:

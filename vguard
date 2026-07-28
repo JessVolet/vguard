@@ -302,6 +302,9 @@ main() {
                     shift 2
                     establecer_politica_subcarpeta "" "$@"
                     ;;
+                set-profile|profile)
+                    asignar_perfil_servicio "" "$3"
+                    ;;
                 resize|extend)
                     redimensionar_volumen "" "$3"
                     ;;
@@ -320,6 +323,9 @@ main() {
                     ;;
                 snap)
                     crear_snapshot "" "$3"
+                    ;;
+                logs)
+                    auditar_logs_selinux ""
                     ;;
                 delete|remove|rm)
                     remover_almacenamiento ""
@@ -368,6 +374,12 @@ main() {
         set-policy)
             shift 1
             establecer_politica_subcarpeta "$@"
+            ;;
+        set-profile|profile)
+            asignar_perfil_servicio "$2" "$3"
+            ;;
+        logs)
+            auditar_logs_selinux "$2"
             ;;
         remove|rm|delete)
             remover_almacenamiento "$2"
