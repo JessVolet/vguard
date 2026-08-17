@@ -7,6 +7,8 @@ import sys
 import os
 import json
 
+import shutil
+
 DEFAULT_POLICY = {
     "owner": "vsynlo",
     "group": "vsynlo",
@@ -47,14 +49,50 @@ def load_json_config(config_path):
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             return json.load(f)
+    except json.JSONDecodeError as e:
+        sys.stderr.write(f"[!] Warning: Config file '{config_path}' is corrupted ({e}).\n")
+        bak_path = f"{config_path}.bak"
+        if os.path.isfile(bak_path):
+            try:
+                with open(bak_path, "r", encoding="utf-8") as bf:
+                    data = json.load(bf)
+                sys.stderr.write(f"[*] Recovered configuration from backup: '{bak_path}'.\n")
+                save_json_config(config_path, data)
+                return data
+            except Exception as be:
+                sys.stderr.write(f"[!] Error: Backup file '{bak_path}' is also corrupted: {be}\n")
+        sys.stderr.write(f"[X] Critical: Failed to parse configuration and no valid backup available.\n")
+        return {}
     except Exception as e:
         sys.stderr.write(f"Error cargando JSON {config_path}: {e}\n")
         return {}
 
 def save_json_config(config_path, data):
-    os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+    abs_config_path = os.path.abspath(config_path)
+    os.makedirs(os.path.dirname(abs_config_path), exist_ok=True)
+    tmp_path = f"{abs_config_path}.tmp"
+    try:
+        # Create a backup before overwriting if the file already exists
+        if os.path.isfile(abs_config_path):
+            bak_path = f"{abs_config_path}.bak"
+            try:
+                shutil.copy2(abs_config_path, bak_path)
+            except Exception:
+                pass
+
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+
+        os.replace(tmp_path, abs_config_path)
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+        raise e
 
 def get_config_vars(config_path):
     data = load_json_config(config_path)
@@ -291,7 +329,12 @@ def check_owner_match(path, expected_owner):
     except Exception:
         print("false")
 
-def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
+PRUNED_DIRS = {
+    '.git', '.svn', '.hg', 'node_modules', 'vendor', '__pycache__',
+    '.venv', 'venv', '.cache', '.npm', '.cargo', 'tmp', '.tmp', 'cache'
+}
+
+def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel="", max_depth=3):
     if not os.path.exists(abs_path):
         sys.stderr.write(f"Error: La ruta '{abs_path}' no existe en disco.\n")
         sys.exit(1)
@@ -336,15 +379,56 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
 
         clean_sub = subpath_rel.strip("/. ")
 
+        # Load JSON config once for batch in-memory processing
+        data = load_json_config(config_path)
+        managed = data.setdefault("managed_volumes", {})
+
+        target_vol_key = None
+        for name, vol_info in managed.items():
+            if name == volume_name or vol_info.get("path") == volume_name or os.path.basename(vol_info.get("path", "")) == volume_name:
+                target_vol_key = name
+                break
+
+        if not target_vol_key:
+            target_vol_key = volume_name
+            managed[target_vol_key] = {
+                "tier": "custom",
+                "path": abs_path if not clean_sub else f"/mnt/sda1/servicios/{volume_name}",
+                "policy": dict(DEFAULT_POLICY),
+                "subfolder_policies": {}
+            }
+
+        vol_dict = managed[target_vol_key]
+        vol_dict.setdefault("policy", {})
+        vol_dict.setdefault("subfolder_policies", {})
+
+        exceptions_found = 0
+
         if not clean_sub or clean_sub in [".", "/", ""]:
-            set_volume_policy(config_path, volume_name, user, group, mode_dir, mode_file, selinux)
-            
-            # SMART AUTO-DISCOVERY for exceptions
-            exceptions_found = 0
+            vol_dict["policy"]["owner"] = str(user)
+            vol_dict["policy"]["group"] = str(group)
+            vol_dict["policy"]["mode_dir"] = str(mode_dir)
+            vol_dict["policy"]["mode_file"] = str(mode_file)
+            vol_dict["policy"]["selinux_context"] = str(selinux)
+            vol_dict["policy"]["allow_subfolder_overrides"] = True
+
+            sub_policies = vol_dict["subfolder_policies"]
+            for invalid_key in [".", "", "/"]:
+                sub_policies.pop(invalid_key, None)
+
+            # SMART AUTO-DISCOVERY for exceptions (Batch in memory, depth-limited, pruned)
             for r, dirs, files in os.walk(abs_path):
-                dirs[:] = [d for d in dirs if d not in ['.git', 'node_modules', 'vendor']]
+                rel_dir = os.path.relpath(r, abs_path)
+                current_depth = 0 if rel_dir == "." else len(rel_dir.split(os.sep))
+
+                # Prune known heavy directories
+                dirs[:] = [d for d in dirs if d not in PRUNED_DIRS]
+
+                # Stop recursion beyond max_depth
+                if current_depth >= max_depth:
+                    dirs.clear()
+
                 new_dirs = []
-                
                 # Check directories
                 for d in dirs:
                     dirpath = os.path.join(r, d)
@@ -359,17 +443,23 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
                         except KeyError:
                             g = str(dst.st_gid)
                         dmode = oct(dst.st_mode & 0o7777)[2:].zfill(4)
-                        
+
                         if u != user or g != group or dmode != mode_dir:
-                            rel_ex = os.path.relpath(dirpath, abs_path)
-                            set_subfolder_policy(config_path, volume_name, rel_ex, u, g, dmode, dmode, selinux)
+                            rel_ex = os.path.relpath(dirpath, abs_path).strip("/. ")
+                            sub_policies[rel_ex] = {
+                                "owner": str(u),
+                                "group": str(g),
+                                "mode_dir": str(dmode),
+                                "mode_file": str(dmode),
+                                "selinux_context": str(selinux)
+                            }
                             exceptions_found += 1
                         else:
                             new_dirs.append(d)
                     except Exception:
                         pass
-                dirs[:] = new_dirs  # Do not traverse into exception directories
-                
+                dirs[:] = new_dirs
+
                 # Check files
                 for f in files:
                     filepath = os.path.join(r, f)
@@ -384,22 +474,35 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
                         except KeyError:
                             g = str(fst.st_gid)
                         fmode = oct(fst.st_mode & 0o7777)[2:].zfill(4)
-                        
+
                         if u != user or g != group or fmode != mode_file:
-                            rel_ex = os.path.relpath(filepath, abs_path)
-                            set_subfolder_policy(config_path, volume_name, rel_ex, u, g, mode_dir, fmode, selinux)
+                            rel_ex = os.path.relpath(filepath, abs_path).strip("/. ")
+                            sub_policies[rel_ex] = {
+                                "owner": str(u),
+                                "group": str(g),
+                                "mode_dir": str(mode_dir),
+                                "mode_file": str(fmode),
+                                "selinux_context": str(selinux)
+                            }
                             exceptions_found += 1
                     except Exception:
                         pass
 
-            # Si se encontraron excepciones o es un contenedor probable, marcamos container_managed=true
             if exceptions_found > 0:
-                data = load_json_config(config_path)
-                data.setdefault("managed_volumes", {}).setdefault(volume_name, {}).setdefault("policy", {})["container_managed"] = True
-                save_json_config(config_path, data)
+                vol_dict["policy"]["container_managed"] = True
 
         else:
-            set_subfolder_policy(config_path, volume_name, clean_sub, user, group, mode_dir, mode_file, selinux)
+            sub_policies = vol_dict["subfolder_policies"]
+            sub_policies[clean_sub] = {
+                "owner": str(user),
+                "group": str(group),
+                "mode_dir": str(mode_dir),
+                "mode_file": str(mode_file),
+                "selinux_context": str(selinux)
+            }
+
+        # Save once at the end atomically
+        save_json_config(config_path, data)
 
         print(json.dumps({
             "target": clean_sub if clean_sub else ".",
