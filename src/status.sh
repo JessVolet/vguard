@@ -20,7 +20,7 @@ listar_volumenes_gestionados() {
 
     local found_count=0
 
-    printf "%-22s %-16s %-9s %-10s %-8s %-10s\n" "SERVICIO" "TIER" "TAMAÑO" "OWNER" "PERMS" "ESTADO"
+    printf "%-30s %-16s %-9s %-12s %-8s %-10s\n" "SERVICIO" "TIER" "TAMAÑO" "OWNER" "PERMS" "ESTADO"
     draw_separator
 
     for base in "${base_paths[@]}"; do
@@ -63,8 +63,8 @@ listar_volumenes_gestionados() {
                 service_name="$fallback_name"
             fi
 
-            # Obtener política declarativa global SSOT desde vguard.conf
-            obtener_politica_volumen "$service_name" ""
+            # Obtener política declarativa global SSOT desde vguard.conf (con ruta para evitar colisiones)
+            obtener_politica_volumen "$service_name" "" "$dir"
             local exp_owner="$POL_OWNER:$POL_GROUP"
             local exp_posix="$POL_MODE_DIR"
 
@@ -106,13 +106,16 @@ listar_volumenes_gestionados() {
                 health_status="${CLR_RED}DRIFTED${CLR_RESET}"
             fi
 
-            local display_name="${service_name:0:15}${is_active}"
+            local display_name="${service_name}${is_active}"
+            if [ "${#display_name}" -gt 29 ]; then
+                display_name="${display_name:0:26}..."
+            fi
 
-            printf "%-22s %-16s %-9s %-10s %-8s %b\n" \
+            printf "%-30s %-16s %-9s %-12s %-8s %b\n" \
                 "$display_name" \
                 "${tier:0:15}" \
                 "$disk_usage" \
-                "${actual_owner:0:9}" \
+                "${actual_owner:0:11}" \
                 "$actual_posix" \
                 "$health_status"
 

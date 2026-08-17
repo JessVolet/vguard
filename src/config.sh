@@ -143,6 +143,7 @@ asignar_perfil_servicio() {
 obtener_politica_volumen() {
     local target_vol="$1"
     local subfolder="${2:-}"
+    local target_path="${3:-}"
 
     local py_helper
     py_helper="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/policy_helper.py"
@@ -157,7 +158,8 @@ obtener_politica_volumen() {
 
     if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
         local policy_json
-        policy_json=$(python3 "$py_helper" get-policy "$CONFIG_FILE" "$target_vol" "$subfolder")
+        local query_target="${target_path:-$target_vol}"
+        policy_json=$(python3 "$py_helper" get-policy "$CONFIG_FILE" "$query_target" "$subfolder")
         if [ -n "$policy_json" ]; then
             POL_OWNER=$(echo "$policy_json" | jq -r '.owner // "vsynlo"' 2>/dev/null || echo "vsynlo")
             POL_GROUP=$(echo "$policy_json" | jq -r '.group // "vsynlo"' 2>/dev/null || echo "vsynlo")

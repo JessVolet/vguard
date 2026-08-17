@@ -47,7 +47,19 @@ def sanitize_volume_name(name):
     if not name:
         return ""
     cleaned = str(name).strip().rstrip("/. ")
-    return os.path.basename(cleaned) if cleaned else ""
+    if os.path.isabs(cleaned):
+        return os.path.basename(cleaned) if cleaned else ""
+    return cleaned
+
+def generate_qualified_key(abs_path, vol_name):
+    clean_vol = sanitize_volume_name(vol_name)
+    if not abs_path:
+        return clean_vol
+    clean_abs = os.path.abspath(abs_path).rstrip("/. ")
+    parent_dir = os.path.basename(os.path.dirname(clean_abs))
+    if parent_dir and parent_dir not in ["mnt", "media", "data", "root", "", "/"]:
+        return f"{parent_dir}/{clean_vol}"
+    return clean_vol
 
 def normalize_managed_volumes(data):
     if not isinstance(data, dict) or "managed_volumes" not in data:
@@ -58,24 +70,38 @@ def normalize_managed_volumes(data):
 
     new_managed = {}
     for key, val in managed.items():
-        clean_key = sanitize_volume_name(key)
+        if not isinstance(val, dict):
+            continue
+
+        clean_path = str(val.get("path", "")).strip().rstrip("/. ")
+        if clean_path:
+            val["path"] = clean_path
+
+        if "subfolder_policies" in val and isinstance(val["subfolder_policies"], dict):
+            clean_subs = {}
+            for sk, sv in val["subfolder_policies"].items():
+                clean_sk = sk.strip("/. ")
+                if clean_sk and clean_sk not in [".", "", "/"]:
+                    clean_subs[clean_sk] = sv
+            val["subfolder_policies"] = clean_subs
+
+        raw_clean_key = str(key).strip().rstrip("/. ")
+        clean_key = sanitize_volume_name(raw_clean_key)
+        if not clean_key:
+            clean_key = sanitize_volume_name(clean_path)
+
         if not clean_key:
             continue
 
-        if isinstance(val, dict):
-            if "path" in val and isinstance(val["path"], str):
-                val["path"] = val["path"].rstrip("/. ")
-            if "subfolder_policies" in val and isinstance(val["subfolder_policies"], dict):
-                clean_subs = {}
-                for sk, sv in val["subfolder_policies"].items():
-                    clean_sk = sk.strip("/. ")
-                    if clean_sk and clean_sk not in [".", "", "/"]:
-                        clean_subs[clean_sk] = sv
-                val["subfolder_policies"] = clean_subs
-
         if clean_key in new_managed:
             existing = new_managed[clean_key]
-            if isinstance(val, dict) and isinstance(existing, dict):
+            exist_path = str(existing.get("path", "")).strip().rstrip("/. ")
+            if clean_path and exist_path and clean_path != exist_path:
+                # Collision detected with different physical paths: qualify key
+                qualified_key = generate_qualified_key(clean_path, clean_key)
+                new_managed[qualified_key] = val
+            else:
+                # Same path or unspecified path: merge
                 sub_exist = existing.setdefault("subfolder_policies", {})
                 if "subfolder_policies" in val and isinstance(val["subfolder_policies"], dict):
                     sub_exist.update(val["subfolder_policies"])
@@ -182,18 +208,33 @@ def get_volume_policy(config_path, volume_name_or_path, subfolder_relpath=None):
     data = load_json_config(config_path)
     managed = data.get("managed_volumes", {})
 
-    clean_target = sanitize_volume_name(volume_name_or_path)
-
     target_vol = None
-    if clean_target in managed:
-        target_vol = managed[clean_target]
-    else:
+    if volume_name_or_path:
+        clean_target = str(volume_name_or_path).strip().rstrip("/. ")
+        target_basename = os.path.basename(clean_target)
+
+        # 1. Match by exact path
         for name, vol_info in managed.items():
-            clean_name = sanitize_volume_name(name)
-            vol_path = sanitize_volume_name(vol_info.get("path", ""))
-            if clean_name == clean_target or vol_path == clean_target or name == volume_name_or_path or vol_info.get("path") == volume_name_or_path:
+            vol_path = str(vol_info.get("path", "")).strip().rstrip("/. ")
+            if vol_path and (vol_path == clean_target or vol_path == volume_name_or_path):
                 target_vol = vol_info
                 break
+
+        # 2. Match by exact key name
+        if not target_vol:
+            if clean_target in managed:
+                target_vol = managed[clean_target]
+            elif target_basename in managed:
+                target_vol = managed[target_basename]
+
+        # 3. Match by basename of path or key
+        if not target_vol:
+            for name, vol_info in managed.items():
+                vpath_base = os.path.basename(str(vol_info.get("path", "")).strip().rstrip("/. "))
+                name_base = os.path.basename(str(name).strip().rstrip("/. "))
+                if target_basename in [name_base, vpath_base]:
+                    target_vol = vol_info
+                    break
 
     policy = dict(DEFAULT_POLICY)
     if target_vol and "policy" in target_vol:
@@ -436,27 +477,44 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel="", max_
             pass
 
         clean_sub = subpath_rel.strip("/. ")
+        root_vol_path = os.path.dirname(abs_path) if clean_sub else abs_path
 
         # Load JSON config once for batch in-memory processing
         data = load_json_config(config_path)
         managed = data.setdefault("managed_volumes", {})
 
+        clean_vol_name = sanitize_volume_name(volume_name)
+
+        # 1. Match by exact path first to prevent collision across different paths with same basename
         target_vol_key = None
         for name, vol_info in managed.items():
-            if name == volume_name or vol_info.get("path") == volume_name or os.path.basename(vol_info.get("path", "")) == volume_name:
+            vol_path = str(vol_info.get("path", "")).strip().rstrip("/. ")
+            if vol_path and (vol_path == abs_path or vol_path == root_vol_path):
                 target_vol_key = name
                 break
 
+        # 2. If no exact path match, check key collision
         if not target_vol_key:
-            target_vol_key = volume_name
+            if clean_vol_name in managed:
+                existing_path = str(managed[clean_vol_name].get("path", "")).strip().rstrip("/. ")
+                if existing_path and existing_path not in [abs_path, root_vol_path]:
+                    # Collision detected: generate qualified key (e.g. nvme_fast/mysql)
+                    target_vol_key = generate_qualified_key(root_vol_path, clean_vol_name)
+                else:
+                    target_vol_key = clean_vol_name
+            else:
+                target_vol_key = clean_vol_name
+
+        if target_vol_key not in managed:
             managed[target_vol_key] = {
                 "tier": "custom",
-                "path": abs_path if not clean_sub else f"/mnt/sda1/servicios/{volume_name}",
+                "path": root_vol_path,
                 "policy": dict(DEFAULT_POLICY),
                 "subfolder_policies": {}
             }
 
         vol_dict = managed[target_vol_key]
+        vol_dict["path"] = root_vol_path
         vol_dict.setdefault("policy", {})
         vol_dict.setdefault("subfolder_policies", {})
 
