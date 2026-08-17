@@ -188,6 +188,12 @@ auditar_y_reparar_directorio() {
 
 reparar_almacenamiento() {
     local ruta="$1"
+    local opt="$2"
+
+    if [ "$ruta" = "--dry-run" ]; then
+        opt="--dry-run"
+        ruta=""
+    fi
 
     if [ -z "$ruta" ]; then
         if cargar_contexto >/dev/null 2>&1; then
@@ -202,6 +208,12 @@ reparar_almacenamiento() {
     if [ -z "$ruta" ]; then
         msg_error "Ruta no especificada."
         return 1
+    fi
+
+    if [ "$opt" = "--dry-run" ]; then
+        msg_info "Ejecutando en modo SIMULACIÓN (--dry-run)..."
+        auditar_y_reparar_directorio "$ruta" "true"
+        return 0
     fi
 
     auditar_y_reparar_directorio "$ruta" "false"

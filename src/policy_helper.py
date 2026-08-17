@@ -298,11 +298,16 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
 
     try:
         st = os.stat(abs_path)
-        import pwd, grp
-        try: user = pwd.getpwuid(st.st_uid).pw_name
-        except KeyError: user = str(st.st_uid)
-        try: group = grp.getgrgid(st.st_gid).gr_name
-        except KeyError: group = str(st.st_gid)
+        import pwd
+        import grp
+        try:
+            user = pwd.getpwuid(st.st_uid).pw_name
+        except KeyError:
+            user = str(st.st_uid)
+        try:
+            group = grp.getgrgid(st.st_gid).gr_name
+        except KeyError:
+            group = str(st.st_gid)
 
         mode_dir = oct(st.st_mode & 0o7777)[2:].zfill(4)
 
@@ -345,10 +350,14 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
                     dirpath = os.path.join(r, d)
                     try:
                         dst = os.stat(dirpath)
-                        try: u = pwd.getpwuid(dst.st_uid).pw_name
-                        except KeyError: u = str(dst.st_uid)
-                        try: g = grp.getgrgid(dst.st_gid).gr_name
-                        except KeyError: g = str(dst.st_gid)
+                        try:
+                            u = pwd.getpwuid(dst.st_uid).pw_name
+                        except KeyError:
+                            u = str(dst.st_uid)
+                        try:
+                            g = grp.getgrgid(dst.st_gid).gr_name
+                        except KeyError:
+                            g = str(dst.st_gid)
                         dmode = oct(dst.st_mode & 0o7777)[2:].zfill(4)
                         
                         if u != user or g != group or dmode != mode_dir:
@@ -366,10 +375,14 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
                     filepath = os.path.join(r, f)
                     try:
                         fst = os.stat(filepath)
-                        try: u = pwd.getpwuid(fst.st_uid).pw_name
-                        except KeyError: u = str(fst.st_uid)
-                        try: g = grp.getgrgid(fst.st_gid).gr_name
-                        except KeyError: g = str(fst.st_gid)
+                        try:
+                            u = pwd.getpwuid(fst.st_uid).pw_name
+                        except KeyError:
+                            u = str(fst.st_uid)
+                        try:
+                            g = grp.getgrgid(fst.st_gid).gr_name
+                        except KeyError:
+                            g = str(fst.st_gid)
                         fmode = oct(fst.st_mode & 0o7777)[2:].zfill(4)
                         
                         if u != user or g != group or fmode != mode_file:

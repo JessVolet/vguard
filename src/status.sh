@@ -113,6 +113,15 @@ listar_volumenes_gestionados() {
     else
         msg_success "Total de volúmenes gestionados encontrados: $found_count"
     fi
+    
+    # Check for updates silently in the background (timeout 1s to avoid blocking)
+    # shellcheck source=/dev/null
+    source "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/update.sh" 2>/dev/null || true
+    if command -v chequear_actualizaciones_vguard >/dev/null 2>&1; then
+        chequear_actualizaciones_vguard "true" &
+        # We don't wait for it. It might print to terminal slightly after, which is fine for CLI background checks.
+        wait $! 2>/dev/null || true
+    fi
 }
 
 sanar_todos_los_volumenes() {
