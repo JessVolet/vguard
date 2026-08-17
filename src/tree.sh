@@ -313,13 +313,18 @@ guardar_politica_desde_disco() {
             p_target=$(echo "$json_out" | jq -r '.target // "."' 2>/dev/null || echo ".")
             p_exc=$(echo "$json_out" | jq -r '.exceptions_discovered // 0' 2>/dev/null || echo "0")
 
+            local meta_target_name="$vol_name"
+            if [ -n "$p_target" ] && [ "$p_target" != "." ] && [ "$p_target" != "/" ]; then
+                meta_target_name="$vol_name/$p_target"
+            fi
+
             # Sincronizar metadatos locales .vguard_meta
             if command -v escribir_metadatos >/dev/null 2>&1; then
-                escribir_metadatos "$abs_target" "$vol_name/$p_target" "custom" "$p_owner" "$p_mode_dir" "$p_selinux" "N/A" 2>/dev/null || true
+                escribir_metadatos "$abs_target" "$meta_target_name" "custom" "$p_owner" "$p_mode_dir" "$p_selinux" "N/A" 2>/dev/null || true
             fi
 
             msg_success "Política aprendida y guardada exitosamente en vguard.conf y .vguard_meta:"
-            echo "  - Objetivo: $vol_name/$p_target"
+            echo "  - Objetivo: $meta_target_name"
             echo "  - Propietario capturado: $p_owner"
             echo "  - Modo Directorio: $p_mode_dir"
             echo "  - Modo Archivo: $p_mode_file"

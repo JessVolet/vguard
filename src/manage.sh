@@ -57,7 +57,17 @@ renombrar_almacenamiento() {
     # shellcheck source=/dev/null
     source "$meta_file" 2>/dev/null || true
 
-    local nombre_actual="${VGUARD_SERVICE_NAME:-$(basename "$ruta_actual")}"
+    local fallback_nombre
+    fallback_nombre="$(basename "${ruta_actual%/}")"
+    local raw_nombre="${VGUARD_SERVICE_NAME:-$fallback_nombre}"
+    raw_nombre="${raw_nombre%/}"
+    raw_nombre="${raw_nombre%/.}"
+    raw_nombre="${raw_nombre%.}"
+    local nombre_actual
+    nombre_actual="$(basename "$raw_nombre")"
+    if [ -z "$nombre_actual" ] || [ "$nombre_actual" = "." ]; then
+        nombre_actual="$fallback_nombre"
+    fi
 
     if [ -z "$nuevo_nombre" ]; then
         read -p "Ingresa el nuevo nombre para el servicio '$nombre_actual': " nuevo_nombre
