@@ -127,7 +127,12 @@ seleccionar_contexto() {
         source "$meta_path" 2>/dev/null || true
     fi
 
-    local s_name="${VGUARD_SERVICE_NAME:-$(basename "$ruta_target")}"
+    local raw_s_name="${VGUARD_SERVICE_NAME:-$(basename "$ruta_target")}"
+    local s_name
+    s_name="$(basename "$raw_s_name")"
+    s_name="${s_name%/}"
+    s_name="${s_name%/.}"
+    s_name="${s_name%.}"
     local s_tier="${VGUARD_TIER:-${TIPO_USO:-Desconocido}}"
     local s_owner="${VGUARD_OWNER:-$OWNER_CORRECTO}"
     local s_posix="${VGUARD_POSIX:-$PERMISO_POSIX}"

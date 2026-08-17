@@ -48,7 +48,12 @@ listar_volumenes_gestionados() {
             # shellcheck source=/dev/null
             source "$meta_file" 2>/dev/null || true
 
-            local service_name="${VGUARD_SERVICE_NAME:-$(basename "$dir")}"
+            local raw_service_name="${VGUARD_SERVICE_NAME:-$(basename "$dir")}"
+            local service_name
+            service_name="$(basename "$raw_service_name")"
+            service_name="${service_name%/}"
+            service_name="${service_name%/.}"
+            service_name="${service_name%.}"
 
             # Obtener política declarativa global SSOT desde vguard.conf
             obtener_politica_volumen "$service_name" ""

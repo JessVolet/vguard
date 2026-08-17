@@ -39,7 +39,7 @@ import subprocess
 from policy_helper import load_json_config
 
 config_file = sys.argv[1]
-vol_name = sys.argv[2]
+vol_name = sys.argv[2].strip().rstrip("/. ")
 root_path = sys.argv[3]
 container_managed = sys.argv[4].lower() == "true"
 
@@ -93,6 +93,9 @@ auditar_y_reparar_directorio() {
 
     local vol_name
     vol_name="$(basename "$ruta_target")"
+    vol_name="${vol_name%/}"
+    vol_name="${vol_name%/.}"
+    vol_name="${vol_name%.}"
 
     # Obtener política declarativa SSOT desde vguard.conf (Single Source of Truth)
     obtener_politica_volumen "$vol_name" ""

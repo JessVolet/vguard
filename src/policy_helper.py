@@ -43,12 +43,61 @@ PROFILES = {
     }
 }
 
+def sanitize_volume_name(name):
+    if not name:
+        return ""
+    cleaned = str(name).strip().rstrip("/. ")
+    return os.path.basename(cleaned) if cleaned else ""
+
+def normalize_managed_volumes(data):
+    if not isinstance(data, dict) or "managed_volumes" not in data:
+        return data
+    managed = data["managed_volumes"]
+    if not isinstance(managed, dict):
+        return data
+
+    new_managed = {}
+    for key, val in managed.items():
+        clean_key = sanitize_volume_name(key)
+        if not clean_key:
+            continue
+
+        if isinstance(val, dict):
+            if "path" in val and isinstance(val["path"], str):
+                val["path"] = val["path"].rstrip("/. ")
+            if "subfolder_policies" in val and isinstance(val["subfolder_policies"], dict):
+                clean_subs = {}
+                for sk, sv in val["subfolder_policies"].items():
+                    clean_sk = sk.strip("/. ")
+                    if clean_sk and clean_sk not in [".", "", "/"]:
+                        clean_subs[clean_sk] = sv
+                val["subfolder_policies"] = clean_subs
+
+        if clean_key in new_managed:
+            existing = new_managed[clean_key]
+            if isinstance(val, dict) and isinstance(existing, dict):
+                sub_exist = existing.setdefault("subfolder_policies", {})
+                if "subfolder_policies" in val and isinstance(val["subfolder_policies"], dict):
+                    sub_exist.update(val["subfolder_policies"])
+                if "policy" in val and isinstance(val["policy"], dict):
+                    existing.setdefault("policy", {}).update(val["policy"])
+                if "tier" in val:
+                    existing["tier"] = val["tier"]
+                if "profile" in val:
+                    existing["profile"] = val["profile"]
+        else:
+            new_managed[clean_key] = val
+
+    data["managed_volumes"] = new_managed
+    return data
+
 def load_json_config(config_path):
     if not os.path.isfile(config_path):
         return {}
     try:
         with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            return normalize_managed_volumes(data)
     except json.JSONDecodeError as e:
         sys.stderr.write(f"[!] Warning: Config file '{config_path}' is corrupted ({e}).\n")
         bak_path = f"{config_path}.bak"
@@ -58,7 +107,7 @@ def load_json_config(config_path):
                     data = json.load(bf)
                 sys.stderr.write(f"[*] Recovered configuration from backup: '{bak_path}'.\n")
                 save_json_config(config_path, data)
-                return data
+                return normalize_managed_volumes(data)
             except Exception as be:
                 sys.stderr.write(f"[!] Error: Backup file '{bak_path}' is also corrupted: {be}\n")
         sys.stderr.write(f"[X] Critical: Failed to parse configuration and no valid backup available.\n")
@@ -68,6 +117,7 @@ def load_json_config(config_path):
         return {}
 
 def save_json_config(config_path, data):
+    data = normalize_managed_volumes(data)
     abs_config_path = os.path.abspath(config_path)
     os.makedirs(os.path.dirname(abs_config_path), exist_ok=True)
     tmp_path = f"{abs_config_path}.tmp"
@@ -132,11 +182,18 @@ def get_volume_policy(config_path, volume_name_or_path, subfolder_relpath=None):
     data = load_json_config(config_path)
     managed = data.get("managed_volumes", {})
 
+    clean_target = sanitize_volume_name(volume_name_or_path)
+
     target_vol = None
-    for name, vol_info in managed.items():
-        if name == volume_name_or_path or vol_info.get("path") == volume_name_or_path or os.path.basename(vol_info.get("path", "")) == volume_name_or_path:
-            target_vol = vol_info
-            break
+    if clean_target in managed:
+        target_vol = managed[clean_target]
+    else:
+        for name, vol_info in managed.items():
+            clean_name = sanitize_volume_name(name)
+            vol_path = sanitize_volume_name(vol_info.get("path", ""))
+            if clean_name == clean_target or vol_path == clean_target or name == volume_name_or_path or vol_info.get("path") == volume_name_or_path:
+                target_vol = vol_info
+                break
 
     policy = dict(DEFAULT_POLICY)
     if target_vol and "policy" in target_vol:
@@ -149,16 +206,15 @@ def get_volume_policy(config_path, volume_name_or_path, subfolder_relpath=None):
 
     if subfolder_relpath and target_vol and target_vol.get("policy", {}).get("allow_subfolder_overrides", True):
         sub_policies = target_vol.get("subfolder_policies", {})
-        subfolder_relpath = subfolder_relpath.strip("/")
-        # Buscar la coincidencia más específica de subcarpeta
+        subfolder_relpath = subfolder_relpath.strip("/. ")
         matched_path = None
         for sub_p in sub_policies:
-            clean_p = sub_p.strip("/")
+            clean_p = sub_p.strip("/. ")
             if subfolder_relpath == clean_p or subfolder_relpath.startswith(clean_p + "/"):
                 if matched_path is None or len(clean_p) > len(matched_path):
                     matched_path = clean_p
 
-        if matched_path:
+        if matched_path and matched_path in sub_policies:
             policy.update(sub_policies[matched_path])
 
     print(json.dumps(policy))
@@ -168,20 +224,24 @@ def set_volume_profile(config_path, volume_name, profile_name):
         sys.stderr.write(f"Perfil invalido '{profile_name}'. Opciones: {list(PROFILES.keys())}\n")
         sys.exit(1)
 
+    clean_vol_name = sanitize_volume_name(volume_name)
     data = load_json_config(config_path)
     managed = data.setdefault("managed_volumes", {})
 
     target_vol_key = None
-    for name, vol_info in managed.items():
-        if name == volume_name or vol_info.get("path") == volume_name or os.path.basename(vol_info.get("path", "")) == volume_name:
-            target_vol_key = name
-            break
+    if clean_vol_name in managed:
+        target_vol_key = clean_vol_name
+    else:
+        for name, vol_info in managed.items():
+            if sanitize_volume_name(name) == clean_vol_name or sanitize_volume_name(vol_info.get("path", "")) == clean_vol_name:
+                target_vol_key = name
+                break
 
     if not target_vol_key:
-        target_vol_key = volume_name
+        target_vol_key = clean_vol_name
         managed[target_vol_key] = {
             "tier": "custom",
-            "path": f"/mnt/sda1/servicios/{volume_name}",
+            "path": f"/mnt/sda1/servicios/{clean_vol_name}",
             "policy": dict(DEFAULT_POLICY),
             "subfolder_policies": {}
         }
@@ -219,19 +279,19 @@ def set_volume_profile(config_path, volume_name, profile_name):
     save_json_config(config_path, data)
 
 def set_volume_policy(config_path, volume_name, owner, group, mode_dir, mode_file, selinux_context, allow_subfolder_overrides=True):
+    clean_vol_name = sanitize_volume_name(volume_name)
     data = load_json_config(config_path)
-    if "managed_volumes" not in data:
-        data["managed_volumes"] = {}
+    managed = data.setdefault("managed_volumes", {})
 
-    if volume_name not in data["managed_volumes"]:
-        data["managed_volumes"][volume_name] = {
+    if clean_vol_name not in managed:
+        managed[clean_vol_name] = {
             "tier": "custom",
-            "path": f"/mnt/sda1/servicios/{volume_name}",
+            "path": f"/mnt/sda1/servicios/{clean_vol_name}",
             "policy": {},
             "subfolder_policies": {}
         }
 
-    data["managed_volumes"][volume_name]["policy"] = {
+    managed[clean_vol_name]["policy"] = {
         "owner": str(owner),
         "group": str(group),
         "mode_dir": str(mode_dir),
@@ -242,25 +302,29 @@ def set_volume_policy(config_path, volume_name, owner, group, mode_dir, mode_fil
     save_json_config(config_path, data)
 
 def set_subfolder_policy(config_path, volume_name, subfolder_relpath, owner, group, mode_dir, mode_file, selinux_context):
+    clean_vol_name = sanitize_volume_name(volume_name)
     data = load_json_config(config_path)
-    managed = data.get("managed_volumes", {})
+    managed = data.setdefault("managed_volumes", {})
 
     target_vol_key = None
-    for name, vol_info in managed.items():
-        if name == volume_name or vol_info.get("path") == volume_name or os.path.basename(vol_info.get("path", "")) == volume_name:
-            target_vol_key = name
-            break
+    if clean_vol_name in managed:
+        target_vol_key = clean_vol_name
+    else:
+        for name, vol_info in managed.items():
+            if sanitize_volume_name(name) == clean_vol_name or sanitize_volume_name(vol_info.get("path", "")) == clean_vol_name:
+                target_vol_key = name
+                break
 
     if not target_vol_key:
-        target_vol_key = volume_name
-        data.setdefault("managed_volumes", {})[target_vol_key] = {
+        target_vol_key = clean_vol_name
+        managed[target_vol_key] = {
             "tier": "custom",
-            "path": f"/mnt/sda1/servicios/{volume_name}",
+            "path": f"/mnt/sda1/servicios/{clean_vol_name}",
             "policy": dict(DEFAULT_POLICY),
             "subfolder_policies": {}
         }
 
-    vol_dict = data["managed_volumes"][target_vol_key]
+    vol_dict = managed[target_vol_key]
     vol_dict.setdefault("subfolder_policies", {})
 
     clean_subfolder = subfolder_relpath.strip("/. ")
@@ -268,12 +332,6 @@ def set_subfolder_policy(config_path, volume_name, subfolder_relpath, owner, gro
     # Si la subruta representa la raíz del volumen, redirigir a la política global del volumen
     if not clean_subfolder or clean_subfolder in [".", "/", ""]:
         set_volume_policy(config_path, target_vol_key, owner, group, mode_dir, mode_file, selinux_context)
-        # Recargar para limpiar claves residuales en subfolder_policies
-        data = load_json_config(config_path)
-        sub_policies = data.get("managed_volumes", {}).get(target_vol_key, {}).get("subfolder_policies", {})
-        for invalid_key in [".", "", "/"]:
-            sub_policies.pop(invalid_key, None)
-        save_json_config(config_path, data)
         return
 
     # Sanitizar y remover cualquier clave de flag mal parseada si existiera
@@ -546,6 +604,9 @@ def main():
     elif cmd == "set-subfolder-policy" and len(sys.argv) >= 9:
         # set-subfolder-policy <config_path> <volume_name> <subfolder> <owner> <group> <mode_dir> <mode_file> <selinux>
         set_subfolder_policy(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7], sys.argv[8], sys.argv[9])
+    elif cmd == "normalize-config" and len(sys.argv) >= 3:
+        data = load_json_config(sys.argv[2])
+        save_json_config(sys.argv[2], data)
 
 if __name__ == "__main__":
     main()

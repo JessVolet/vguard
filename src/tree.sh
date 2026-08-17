@@ -279,6 +279,9 @@ guardar_politica_desde_disco() {
 
     local vol_name
     vol_name="$(basename "$ruta_base")"
+    vol_name="${vol_name%/}"
+    vol_name="${vol_name%/.}"
+    vol_name="${vol_name%.}"
 
     local abs_target="$ruta_base"
     local clean_rel=""
