@@ -247,9 +247,9 @@ menu_interactivo_categorizado() {
 
 mostrar_version() {
     print_banner
-    local ver="3.1.0"
+    local ver="3.2.0"
     if [ -f "$SCRIPT_DIR/VERSION" ]; then
-        ver=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "3.1.0")
+        ver=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "3.2.0")
     fi
     echo -e "${CLR_BOLD}VGUARD (Volume Guard & Storage Policy Engine)${CLR_RESET}"
     echo -e "Versión: ${CLR_CYAN}${ver}${CLR_RESET} (Container-Aware Edition)"

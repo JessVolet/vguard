@@ -4,22 +4,22 @@
 # ==============================================================================
 
 actualizar_vguard() {
-    msg_section "ACTUALIZACIÓN DE VGUARD"
+    msg_section "$(t UPDATE_TITLE)"
 
     local repo_dir
     repo_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/.."
     repo_dir="$(realpath "$repo_dir")"
 
-    msg_info "Directorio de repositorio detectado: $repo_dir"
+    msg_info "$(t UPDATE_DIR_DETECTED "$repo_dir")"
 
     if [ ! -d "$repo_dir/.git" ]; then
-        msg_error "El directorio $repo_dir no es un repositorio Git válido. No se puede ejecutar 'git pull'."
+        msg_error "$(t UPDATE_NOT_GIT "$repo_dir")"
         return 1
     fi
 
-    msg_info "Buscando actualizaciones en el repositorio remoto..."
+    msg_info "$(t UPDATE_FETCHING)"
     if ! (cd "$repo_dir" && git fetch -q 2>/dev/null); then
-        msg_error "No se pudo conectar con el repositorio remoto."
+        msg_error "$(t UPDATE_NO_CONN)"
         return 1
     fi
 
@@ -29,19 +29,19 @@ actualizar_vguard() {
     remote_commit=$(cd "$repo_dir" && git rev-parse @{u} 2>/dev/null)
 
     if [ "$local_commit" = "$remote_commit" ]; then
-        msg_success "VGUARD ya está actualizado a la última versión disponible."
+        msg_success "$(t UPDATE_ALREADY)"
         return 0
     fi
 
-    msg_info "Nuevos cambios detectados. Descargando actualización..."
+    msg_info "$(t UPDATE_DL)"
     if (cd "$repo_dir" && git pull -q); then
-        msg_success "Código fuente actualizado exitosamente."
+        msg_success "$(t UPDATE_SUCCESS)"
     else
-        msg_error "Error al aplicar 'git pull'. Revisa cambios locales pendientes."
+        msg_error "$(t UPDATE_PULL_ERR)"
         return 1
     fi
 
-    msg_info "Reinstalando accesos directos y permisos de VGUARD..."
+    msg_info "$(t UPDATE_REINSTALL)"
     if [ -f "$repo_dir/install.sh" ]; then
         bash "$repo_dir/install.sh"
     else
@@ -49,7 +49,7 @@ actualizar_vguard() {
     fi
 
     draw_separator
-    msg_success "VGUARD ha sido actualizado exitosamente a la última versión."
+    msg_success "$(t UPDATE_DONE)"
     draw_separator
 }
 
@@ -65,24 +65,29 @@ chequear_actualizaciones_vguard() {
     fi
 
     if [ "$silent_mode" = "false" ]; then
-        if [ "$CURRENT_LANG" = "en" ]; then
-            msg_info "Checking for VGUARD updates (Local: $current_version)..."
-        else
-            msg_info "Comprobando actualizaciones de VGUARD (Local: $current_version)..."
-        fi
+        msg_info "$(t UPDATE_CHECKING "$current_version")"
     fi
 
-    local raw_url="https://gitlab.com/sowtarez/vguard/-/raw/main/VERSION"
+    local github_api_url="https://api.github.com/repos/sowtarez/vguard/releases/latest"
+    local api_response
+    
+    # Defensive curl request, avoid set -e crash
+    api_response=$(curl -s --connect-timeout 5 "$github_api_url" 2>/dev/null) || true
+    
+    if [ -z "$api_response" ]; then
+        if [ "$silent_mode" = "false" ]; then
+            msg_warning "$(t UPDATE_CONN_ERROR)"
+        fi
+        return 1
+    fi
+
+    # Parse JSON with Python to extract tag_name (removing 'v' prefix if present)
     local remote_version
-    remote_version=$(curl -s --connect-timeout 2 "$raw_url" 2>/dev/null | tr -d '[:space:]') || true
+    remote_version=$(echo "$api_response" | python3 -c "import sys, json; data=json.load(sys.stdin); tag=data.get('tag_name', '').lstrip('v'); print(tag)" 2>/dev/null) || true
 
     if [ -z "$remote_version" ] || [[ ! "$remote_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
         if [ "$silent_mode" = "false" ]; then
-            if [ "$CURRENT_LANG" = "en" ]; then
-                msg_warning "Could not connect to update server or response is invalid."
-            else
-                msg_warning "No se pudo conectar con el servidor de actualizaciones o la respuesta es inválida."
-            fi
+            msg_warning "$(t UPDATE_CONN_ERROR)"
         fi
         return 1
     fi
@@ -90,33 +95,18 @@ chequear_actualizaciones_vguard() {
     if [ "$current_version" != "$remote_version" ] && [ "$current_version" != "unknown" ]; then
         if [ "$silent_mode" = "false" ]; then
             echo -e "\n${CLR_YELLOW}========================================================${CLR_RESET}"
-            if [ "$CURRENT_LANG" = "en" ]; then
-                echo -e "${CLR_BOLD}🚀 NEW VERSION AVAILABLE: $remote_version${CLR_RESET}"
-                echo -e "${CLR_YELLOW}========================================================${CLR_RESET}"
-                echo -e "You are using version ${CLR_CYAN}$current_version${CLR_RESET}."
-                echo -e "Run '${CLR_GREEN}sudo vguard update${CLR_RESET}' to install the latest version."
-            else
-                echo -e "${CLR_BOLD}🚀 NUEVA VERSIÓN DISPONIBLE: $remote_version${CLR_RESET}"
-                echo -e "${CLR_YELLOW}========================================================${CLR_RESET}"
-                echo -e "Estás usando la versión ${CLR_CYAN}$current_version${CLR_RESET}."
-                echo -e "Ejecuta '${CLR_GREEN}sudo vguard update${CLR_RESET}' para instalar la última versión."
-            fi
+            echo -e "${CLR_BOLD}$(t UPDATE_NEW_VERSION "$remote_version")${CLR_RESET}"
+            echo -e "${CLR_YELLOW}========================================================${CLR_RESET}"
+            echo -e "$(t UPDATE_CURRENT_VER "${CLR_CYAN}$current_version${CLR_RESET}")"
+            echo -e "$(t UPDATE_INSTRUCTION)"
             echo -e ""
         else
-            if [ "$CURRENT_LANG" = "en" ]; then
-                echo -e "\n${CLR_YELLOW}[!] A new VGUARD update is available ($remote_version). Run 'sudo vguard update'.${CLR_RESET}"
-            else
-                echo -e "\n${CLR_YELLOW}[!] Hay una nueva actualización de VGUARD disponible ($remote_version). Ejecuta 'sudo vguard update'.${CLR_RESET}"
-            fi
+            echo -e "\n${CLR_YELLOW}[!] $(t UPDATE_SILENT_NEW "$remote_version")${CLR_RESET}"
         fi
         return 0
     else
         if [ "$silent_mode" = "false" ]; then
-            if [ "$CURRENT_LANG" = "en" ]; then
-                msg_success "You are using the latest version of VGUARD ($current_version)."
-            else
-                msg_success "Estás utilizando la última versión de VGUARD ($current_version)."
-            fi
+            msg_success "$(t UPDATE_LATEST "$current_version")"
         fi
         return 2
     fi
