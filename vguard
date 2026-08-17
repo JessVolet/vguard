@@ -245,12 +245,25 @@ menu_interactivo_categorizado() {
     done
 }
 
+mostrar_version() {
+    print_banner
+    echo -e "${CLR_BOLD}VGUARD (Volume Guard & Storage Policy Engine)${CLR_RESET}"
+    echo -e "Versión: ${CLR_CYAN}3.1.0${CLR_RESET} (Container-Aware Edition)"
+    echo -e "Licencia: MIT"
+    echo -e "Repositorio: https://gitlab.com/sowtarez/vguard"
+    echo ""
+    exit 0
+}
+
 main() {
     load_config
 
     local comando="${1:-menu}"
 
     case "$comando" in
+        version|--version|-v)
+            mostrar_version
+            ;;
         init)
             init_config
             ;;

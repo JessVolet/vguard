@@ -5,11 +5,19 @@
 
 set -e
 
+# ANSI Colors
+CLR_RESET='\033[0m'
+CLR_BOLD='\033[1m'
+CLR_BLUE='\033[0;34m'
+CLR_CYAN='\033[0;36m'
+CLR_GREEN='\033[0;32m'
+CLR_YELLOW='\033[0;33m'
+
 SCRIPT_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 
-echo "========================================================"
-echo "         INSTALADOR / ACTUALIZADOR DE VGUARD-S (v1.0)"
-echo "========================================================"
+echo -e "${CLR_BLUE}========================================================${CLR_RESET}"
+echo -e "${CLR_BOLD}     🚀 INSTALADOR / ACTUALIZADOR DE VGUARD (v3.1.0)${CLR_RESET}"
+echo -e "${CLR_BLUE}========================================================${CLR_RESET}"
 
 # Determinar rutas de instalación
 if [ "$EUID" -eq 0 ]; then
@@ -23,35 +31,35 @@ fi
 
 # Detectar instalación previa
 if [ -f "$INSTALL_BIN" ] || [ -L "$INSTALL_BIN" ]; then
-    echo "[*] Detectada instalación previa de VGUARD en: $INSTALL_BIN"
-    echo "[*] Actualizando ejecutable y renovando enlace simbólico..."
+    echo -e "${CLR_CYAN}[*] Detectada instalación previa de VGUARD en: $INSTALL_BIN${CLR_RESET}"
+    echo -e "${CLR_CYAN}[*] Actualizando ejecutable y renovando enlace simbólico...${CLR_RESET}"
     rm -f "$INSTALL_BIN"
 else
-    echo "[*] Instalando VGUARD por primera vez en: $INSTALL_BIN"
+    echo -e "${CLR_CYAN}[*] Instalando VGUARD por primera vez en: $INSTALL_BIN${CLR_RESET}"
 fi
 
 chmod +x "$SCRIPT_DIR/vguard"
 ln -sf "$SCRIPT_DIR/vguard" "$INSTALL_BIN"
 
 # Preparar y verificar configuración
-echo "[*] Verificando directorio de configuración y políticas en: $CONFIG_DIR"
+echo -e "${CLR_CYAN}[*] Verificando directorio de configuración y políticas en: $CONFIG_DIR${CLR_RESET}"
 mkdir -p "$CONFIG_DIR/policies"
 
 if [ ! -f "$CONFIG_DIR/vguard.conf" ]; then
-    echo "[+] Copiando plantilla inicial vguard.conf v3.0..."
+    echo -e "${CLR_GREEN}[+] Copiando plantilla inicial vguard.conf v3.1.0...${CLR_RESET}"
     cp "$SCRIPT_DIR/config/vguard.conf.example" "$CONFIG_DIR/vguard.conf"
 else
-    echo "[*] El archivo de configuración $CONFIG_DIR/vguard.conf ya existe. Se mantendrá tu configuración actual."
+    echo -e "${CLR_YELLOW}[*] El archivo de configuración $CONFIG_DIR/vguard.conf ya existe. Se mantendrá tu configuración actual.${CLR_RESET}"
 fi
 
 if [ -d "$SCRIPT_DIR/config/policies" ]; then
     cp -r "$SCRIPT_DIR/config/policies"/* "$CONFIG_DIR/policies/" 2>/dev/null || true
 fi
 
-echo "========================================================"
-echo "[OK] Instalación / Actualización completada con éxito."
-echo "   - Ejecutable: $INSTALL_BIN"
-echo "   - Configuración: $CONFIG_DIR/vguard.conf"
+echo -e "${CLR_BLUE}========================================================${CLR_RESET}"
+echo -e "${CLR_GREEN}[OK] Instalación / Actualización completada con éxito.${CLR_RESET}"
+echo -e "   - Ejecutable: ${CLR_BOLD}$INSTALL_BIN${CLR_RESET}"
+echo -e "   - Configuración: ${CLR_BOLD}$CONFIG_DIR/vguard.conf${CLR_RESET}"
 echo ""
-echo "Ejecuta 'vguard --help' o 'vguard' para verificar el sistema."
-echo "========================================================"
+echo -e "Ejecuta '${CLR_CYAN}vguard --version${CLR_RESET}' o '${CLR_CYAN}vguard${CLR_RESET}' para verificar el sistema."
+echo -e "${CLR_BLUE}========================================================${CLR_RESET}"

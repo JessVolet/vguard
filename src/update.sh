@@ -17,11 +17,27 @@ actualizar_vguard() {
         return 1
     fi
 
-    msg_info "Obteniendo últimas actualizaciones desde el repositorio Git remoto..."
-    if (cd "$repo_dir" && git pull); then
-        msg_success "Repositorio Git actualizado correctamente."
+    msg_info "Buscando actualizaciones en el repositorio remoto..."
+    if ! (cd "$repo_dir" && git fetch -q 2>/dev/null); then
+        msg_error "No se pudo conectar con el repositorio remoto."
+        return 1
+    fi
+
+    local local_commit
+    local remote_commit
+    local_commit=$(cd "$repo_dir" && git rev-parse HEAD 2>/dev/null)
+    remote_commit=$(cd "$repo_dir" && git rev-parse @{u} 2>/dev/null)
+
+    if [ "$local_commit" = "$remote_commit" ]; then
+        msg_success "VGUARD ya está actualizado a la última versión disponible."
+        return 0
+    fi
+
+    msg_info "Nuevos cambios detectados. Descargando actualización..."
+    if (cd "$repo_dir" && git pull -q); then
+        msg_success "Código fuente actualizado exitosamente."
     else
-        msg_error "Error al ejecutar 'git pull'. Revisa la conexión o cambios pendientes en Git."
+        msg_error "Error al aplicar 'git pull'. Revisa cambios locales pendientes."
         return 1
     fi
 
