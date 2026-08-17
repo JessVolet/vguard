@@ -4,16 +4,7 @@
 # ==============================================================================
 
 get_context_file() {
-    if [ -d "/run" ] && [ -w "/run" ]; then
-        mkdir -p "/run/vguard" 2>/dev/null || true
-        if [ -w "/run/vguard" ]; then
-            echo "/run/vguard/context.json"
-            return
-        fi
-    fi
-    local user_dir="$HOME/.config/vguard"
-    mkdir -p "$user_dir" 2>/dev/null || true
-    echo "$user_dir/context.json"
+    echo "/tmp/.vguard_selected"
 }
 
 guardar_contexto() {
@@ -40,26 +31,26 @@ guardar_contexto() {
   "selected_at": "$(date -Iseconds)"
 }
 EOF
-    chmod 644 "$ctx_file" 2>/dev/null || true
+    chmod 666 "$ctx_file" 2>/dev/null || true
 }
 
 cargar_contexto() {
     local ctx_file
     ctx_file="$(get_context_file)"
 
-    if [ ! -f "$ctx_file" ]; then
+    if [ ! -f "$ctx_file" ] || [ ! -s "$ctx_file" ]; then
         return 1
     fi
 
     # Extraer valores usando tr/grep/awk sin requerir jq externo
-    CTX_SERVICE_NAME=$(grep '"service_name"' "$ctx_file" | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
-    CTX_TIER=$(grep '"tier"' "$ctx_file" | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
-    CTX_MOUNT_POINT=$(grep '"mount_point"' "$ctx_file" | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
-    CTX_LV_PATH=$(grep '"lv_path"' "$ctx_file" | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
-    CTX_OWNER=$(grep '"owner"' "$ctx_file" | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
-    CTX_POSIX=$(grep '"posix"' "$ctx_file" | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
-    CTX_SELINUX=$(grep '"selinux"' "$ctx_file" | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
-    CTX_SELECTED_AT=$(grep '"selected_at"' "$ctx_file" | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
+    CTX_SERVICE_NAME=$(grep '"service_name"' "$ctx_file" 2>/dev/null | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
+    CTX_TIER=$(grep '"tier"' "$ctx_file" 2>/dev/null | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
+    CTX_MOUNT_POINT=$(grep '"mount_point"' "$ctx_file" 2>/dev/null | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
+    CTX_LV_PATH=$(grep '"lv_path"' "$ctx_file" 2>/dev/null | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
+    CTX_OWNER=$(grep '"owner"' "$ctx_file" 2>/dev/null | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
+    CTX_POSIX=$(grep '"posix"' "$ctx_file" 2>/dev/null | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
+    CTX_SELINUX=$(grep '"selinux"' "$ctx_file" 2>/dev/null | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
+    CTX_SELECTED_AT=$(grep '"selected_at"' "$ctx_file" 2>/dev/null | head -n1 | awk -F': "' '{print $2}' | awk -F'"' '{print $1}')
 
     if [ -n "$CTX_MOUNT_POINT" ] && [ -d "$CTX_MOUNT_POINT" ]; then
         return 0
@@ -73,7 +64,7 @@ limpiar_contexto() {
     local ctx_file
     ctx_file="$(get_context_file)"
     if [ -f "$ctx_file" ]; then
-        rm -f "$ctx_file"
+        rm -f "$ctx_file" 2>/dev/null || : > "$ctx_file" 2>/dev/null || true
     fi
     msg_info "Contexto activo limpiado."
 }

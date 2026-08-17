@@ -62,7 +62,7 @@ Predefined policy templates are available in `/etc/vguard/policies/` (`default.j
 - **ASCII Tree Inspection:** `vguard selected tree` renders an ASCII tree of nested subfolders displaying `[owner:group mode selinux]` attributes without altering files.
 - **Interactive TUI Explorer:** `vguard selected explore` launches an interactive terminal navigator powered by `whiptail` to browse nested directories, create subfolders, configure policies, and run Auto-Heal.
 
-### 4. Stateful Session Context (`/run/vguard/context.json`)
+### 4. Stateful Session Context (`/tmp/.vguard_selected`)
 Lock onto an active target volume with `vguard select <volume>` and execute subsequent operations using `vguard selected <action>` without re-typing target paths.
 
 ---

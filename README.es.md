@@ -62,8 +62,8 @@ Existen plantillas predefinidas en `/etc/vguard/policies/` (`default.json`, `con
 - **Inspección en Árbol ASCII:** `vguard selected tree` renderiza una vista jerárquica de subcarpetas mostrando los atributos `[propietario:grupo modo selinux]` sin alterar ningún archivo.
 - **Explorador Interactivo TUI:** `vguard selected explore` inicia un navegador visual interactivo basado en `whiptail` para recorrer subdirectorios, crear subcarpetas, editar políticas y ejecutar Auto-Heal.
 
-### 4. Contexto de Sesión Activo (`/run/vguard/context.json`)
-Selecciona un objetivo activo con `vguard select <volumen>` y ejecuta las acciones posteriores mediante `vguard selected <acción>` sin necesidad de repetir rutas.
+### 4. Contexto de Sesión Activo (`/tmp/.vguard_selected`)
+Selecciona un volumen gestionado mediante `vguard select <volumen>` para operar subsecuentemente sobre él con `vguard selected <accion>` sin tener que volver a escribir rutas ni nombres.
 
 ---
 
