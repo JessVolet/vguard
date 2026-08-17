@@ -39,3 +39,9 @@ This document outlines the coding standards, architectural rules, and best pract
 * **Mandatory Linters:** 
   * **Bash:** All `.sh` scripts must pass `shellcheck` without critical warnings before being merged or committed. 
   * **Python:** All `.py` scripts must adhere to PEP-8 standards for clean and readable formatting. Automate stylistic checks wherever possible.
+
+## 7. Audit Before Code (Auditoría Previa)
+* Antes de implementar una nueva función, módulo o bloque de código, DEBES escanear el repositorio y en específico esa característica para verificar si la funcionalidad (o una muy similar) ya existe.
+* Si la funcionalidad ya existe y funciona bien, debes detenerte, informar al usuario que ya existe y evitar reescribirla.
+* Si la funcionalidad existe pero está obsoleta o tiene errores, debes proponer una refactorización (`refactor:`) o corrección (`fix:`) en lugar de crear un módulo duplicado.
+* Solo si la funcionalidad no existe en absoluto, debes proceder a crearla desde cero (`feat:`).
