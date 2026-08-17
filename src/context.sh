@@ -133,7 +133,7 @@ seleccionar_contexto() {
 
     if [ -f "$meta_path" ]; then
         # shellcheck source=/dev/null
-        source "$meta_path" 2>/dev/null
+        source "$meta_path" 2>/dev/null || true
     fi
 
     local s_name="${VGUARD_SERVICE_NAME:-$(basename "$ruta_target")}"

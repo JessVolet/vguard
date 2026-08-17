@@ -15,19 +15,24 @@ aplicar_permisos_recursivos_por_politica() {
     local target_mode_file="$POL_MODE_FILE"
     local target_selinux="$POL_SELINUX"
 
-    msg_info "Aplicando propietario ($target_owner) a $ruta_root..."
-    chown -R "$target_owner" "$ruta_root" || msg_warning "No se pudo cambiar propietario a $target_owner (¿requiere sudo?)"
+    if [ "$POL_CONTAINER_MANAGED" = "true" ]; then
+        msg_info "Modo Container-Managed: Aplicando propietario ($target_owner) y POSIX solo a la raíz ($ruta_root)..."
+        chown "$target_owner" "$ruta_root" 2>/dev/null || true
+        chmod "$target_mode_dir" "$ruta_root" 2>/dev/null || true
+    else
+        msg_info "Aplicando propietario ($target_owner) a $ruta_root..."
+        chown -R "$target_owner" "$ruta_root" || msg_warning "No se pudo cambiar propietario a $target_owner (¿requiere sudo?)"
 
-    msg_info "Aplicando permisos POSIX a directorios ($target_mode_dir) y archivos ($target_mode_file)..."
-    find "$ruta_root" -type d -exec chmod "$target_mode_dir" {} + 2>/dev/null || chmod -R "$target_mode_dir" "$ruta_root"
-    # Asegurar remoción de bits especiales SGID/SUID si la política especifica modo estándar 07xx
-    if [[ "$target_mode_dir" =~ ^0?[0-7]{3}$ ]]; then
-        find "$ruta_root" -type d -exec chmod ug-s {} + 2>/dev/null || true
+        msg_info "Aplicando permisos POSIX a directorios ($target_mode_dir) y archivos ($target_mode_file)..."
+        find "$ruta_root" -type d -exec chmod "$target_mode_dir" {} + 2>/dev/null || chmod -R "$target_mode_dir" "$ruta_root"
+        if [[ "$target_mode_dir" =~ ^0?[0-7]{3}$ ]]; then
+            find "$ruta_root" -type d -exec chmod ug-s {} + 2>/dev/null || true
+        fi
+        find "$ruta_root" -type f ! -name "$META_FILE" -exec chmod "$target_mode_file" {} + 2>/dev/null || true
     fi
-    find "$ruta_root" -type f ! -name "$META_FILE" -exec chmod "$target_mode_file" {} + 2>/dev/null || true
 
     # Si hay políticas de subcarpetas personalizadas declaradas
-    python3 - "$CONFIG_FILE" "$vol_name" "$ruta_root" << 'EOF' 2>/dev/null || true
+    python3 - "$CONFIG_FILE" "$vol_name" "$ruta_root" "$POL_CONTAINER_MANAGED" << 'EOF' 2>/dev/null || true
 import os
 import sys
 import subprocess
@@ -36,6 +41,7 @@ from policy_helper import load_json_config
 config_file = sys.argv[1]
 vol_name = sys.argv[2]
 root_path = sys.argv[3]
+container_managed = sys.argv[4].lower() == "true"
 
 data = load_json_config(config_file)
 vol_dict = data.get("managed_volumes", {}).get(vol_name, {})
@@ -49,9 +55,17 @@ for rel_sub, pol in sub_policies.items():
         mode_file = pol.get("mode_file", "0664")
         selinux = pol.get("selinux_context", "container_file_t")
 
-        subprocess.run(["chown", "-R", owner, sub_abs], stderr=subprocess.DEVNULL)
-        subprocess.run(["find", sub_abs, "-type", "d", "-exec", "chmod", mode_dir, "{}", "+"], stderr=subprocess.DEVNULL)
-        subprocess.run(["find", sub_abs, "-type", "f", "-exec", "chmod", mode_file, "{}", "+"], stderr=subprocess.DEVNULL)
+        if os.path.isfile(sub_abs) or container_managed:
+            # Sniper mode for files or container-managed
+            subprocess.run(["chown", owner, sub_abs], stderr=subprocess.DEVNULL)
+            mode_to_use = mode_file if os.path.isfile(sub_abs) else mode_dir
+            subprocess.run(["chmod", mode_to_use, sub_abs], stderr=subprocess.DEVNULL)
+        else:
+            # Recursive mode
+            subprocess.run(["chown", "-R", owner, sub_abs], stderr=subprocess.DEVNULL)
+            subprocess.run(["find", sub_abs, "-type", "d", "-exec", "chmod", mode_dir, "{}", "+"], stderr=subprocess.DEVNULL)
+            subprocess.run(["find", sub_abs, "-type", "f", "-exec", "chmod", mode_file, "{}", "+"], stderr=subprocess.DEVNULL)
+            
         if selinux and selinux != "N/A":
             subprocess.run(["chcon", "-R", "-t", selinux, sub_abs], stderr=subprocess.DEVNULL)
 EOF

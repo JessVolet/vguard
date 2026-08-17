@@ -302,12 +302,13 @@ guardar_politica_desde_disco() {
         local json_out
         json_out=$(python3 "$py_helper" save-policy "$CONFIG_FILE" "$vol_name" "$abs_target" "$clean_rel")
         if [ $? -eq 0 ] && [ -n "$json_out" ]; then
-            local p_owner p_mode_dir p_mode_file p_selinux p_target
+            local p_owner p_mode_dir p_mode_file p_selinux p_target p_exc
             p_owner=$(echo "$json_out" | jq -r '.owner // "vsynlo"' 2>/dev/null || echo "vsynlo")
             p_mode_dir=$(echo "$json_out" | jq -r '.mode_dir // "0775"' 2>/dev/null || echo "0775")
             p_mode_file=$(echo "$json_out" | jq -r '.mode_file // "0664"' 2>/dev/null || echo "0664")
             p_selinux=$(echo "$json_out" | jq -r '.selinux_context // "container_file_t"' 2>/dev/null || echo "container_file_t")
             p_target=$(echo "$json_out" | jq -r '.target // "."' 2>/dev/null || echo ".")
+            p_exc=$(echo "$json_out" | jq -r '.exceptions_discovered // 0' 2>/dev/null || echo "0")
 
             # Sincronizar metadatos locales .vguard_meta
             if command -v escribir_metadatos >/dev/null 2>&1; then
@@ -320,6 +321,10 @@ guardar_politica_desde_disco() {
             echo "  - Modo Directorio: $p_mode_dir"
             echo "  - Modo Archivo: $p_mode_file"
             echo "  - Contexto SELinux: $p_selinux"
+            if [ "$p_exc" -gt 0 ] 2>/dev/null; then
+                echo -e "  - ${CLR_YELLOW}Excepciones Auto-Descubiertas: $p_exc rutas mapeadas y marcadas en vguard.conf${CLR_RESET}"
+                echo -e "  - ${CLR_YELLOW}Modo 'container_managed' activado automáticamente.${CLR_RESET}"
+            fi
             msg_info "Cualquier ejecución futura de 'vguard selected heal' respetará esta política aprendida."
         else
             msg_error "No se pudo capturar la política desde disco."

@@ -13,7 +13,8 @@ DEFAULT_POLICY = {
     "mode_dir": "0770",
     "mode_file": "0660",
     "selinux_context": "container_file_t",
-    "allow_subfolder_overrides": True
+    "allow_subfolder_overrides": True,
+    "container_managed": False
 }
 
 PROFILES = {
@@ -21,18 +22,21 @@ PROFILES = {
         "mode_dir": "0770",
         "mode_file": "0660",
         "selinux_context": "container_file_t",
+        "container_managed": True,
         "description": "Bases de datos, backups, logs privados (Strict 0770/0660)"
     },
     "webapp": {
         "mode_dir": "0755",
         "mode_file": "0644",
         "selinux_context": "container_file_t",
+        "container_managed": True,
         "description": "Nginx, PHP, Node.js, Web Servers (0755/0644 con storage 0775)"
     },
     "shared-app": {
         "mode_dir": "0775",
         "mode_file": "0664",
         "selinux_context": "container_file_t",
+        "container_managed": False,
         "description": "Contenedores compartidos mediante GID comun (0775/0664)"
     }
 }
@@ -329,6 +333,58 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
 
         if not clean_sub or clean_sub in [".", "/", ""]:
             set_volume_policy(config_path, volume_name, user, group, mode_dir, mode_file, selinux)
+            
+            # SMART AUTO-DISCOVERY for exceptions
+            exceptions_found = 0
+            for r, dirs, files in os.walk(abs_path):
+                dirs[:] = [d for d in dirs if d not in ['.git', 'node_modules', 'vendor']]
+                new_dirs = []
+                
+                # Check directories
+                for d in dirs:
+                    dirpath = os.path.join(r, d)
+                    try:
+                        dst = os.stat(dirpath)
+                        try: u = pwd.getpwuid(dst.st_uid).pw_name
+                        except KeyError: u = str(dst.st_uid)
+                        try: g = grp.getgrgid(dst.st_gid).gr_name
+                        except KeyError: g = str(dst.st_gid)
+                        dmode = oct(dst.st_mode & 0o7777)[2:].zfill(4)
+                        
+                        if u != user or g != group or dmode != mode_dir:
+                            rel_ex = os.path.relpath(dirpath, abs_path)
+                            set_subfolder_policy(config_path, volume_name, rel_ex, u, g, dmode, dmode, selinux)
+                            exceptions_found += 1
+                        else:
+                            new_dirs.append(d)
+                    except Exception:
+                        pass
+                dirs[:] = new_dirs  # Do not traverse into exception directories
+                
+                # Check files
+                for f in files:
+                    filepath = os.path.join(r, f)
+                    try:
+                        fst = os.stat(filepath)
+                        try: u = pwd.getpwuid(fst.st_uid).pw_name
+                        except KeyError: u = str(fst.st_uid)
+                        try: g = grp.getgrgid(fst.st_gid).gr_name
+                        except KeyError: g = str(fst.st_gid)
+                        fmode = oct(fst.st_mode & 0o7777)[2:].zfill(4)
+                        
+                        if u != user or g != group or fmode != mode_file:
+                            rel_ex = os.path.relpath(filepath, abs_path)
+                            set_subfolder_policy(config_path, volume_name, rel_ex, u, g, mode_dir, fmode, selinux)
+                            exceptions_found += 1
+                    except Exception:
+                        pass
+
+            # Si se encontraron excepciones o es un contenedor probable, marcamos container_managed=true
+            if exceptions_found > 0:
+                data = load_json_config(config_path)
+                data.setdefault("managed_volumes", {}).setdefault(volume_name, {}).setdefault("policy", {})["container_managed"] = True
+                save_json_config(config_path, data)
+
         else:
             set_subfolder_policy(config_path, volume_name, clean_sub, user, group, mode_dir, mode_file, selinux)
 
@@ -337,7 +393,8 @@ def save_disk_as_policy(config_path, volume_name, abs_path, subpath_rel=""):
             "owner": f"{user}:{group}",
             "mode_dir": mode_dir,
             "mode_file": mode_file,
-            "selinux_context": selinux
+            "selinux_context": selinux,
+            "exceptions_discovered": exceptions_found if not clean_sub else 0
         }))
 
     except Exception as e:

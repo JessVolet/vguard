@@ -59,7 +59,7 @@ remover_almacenamiento() {
         # Cargar metadatos para verificar si está vinculado a un LVM
         VGUARD_LV_PATH=""
         # shellcheck source=/dev/null
-        source "$meta_path" 2>/dev/null
+        source "$meta_path" 2>/dev/null || true
         lv_target="${VGUARD_LV_PATH:-N/A}"
     fi
 

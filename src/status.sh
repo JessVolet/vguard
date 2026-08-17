@@ -46,7 +46,7 @@ listar_volumenes_gestionados() {
             TIPO_USO=""
 
             # shellcheck source=/dev/null
-            source "$meta_file" 2>/dev/null
+            source "$meta_file" 2>/dev/null || true
 
             local service_name="${VGUARD_SERVICE_NAME:-$(basename "$dir")}"
 

@@ -153,6 +153,7 @@ obtener_politica_volumen() {
     POL_MODE_FILE="0660"
     POL_SELINUX="container_file_t"
     POL_ALLOW_SUB="true"
+    POL_CONTAINER_MANAGED="false"
 
     if [ -f "$py_helper" ] && command -v python3 >/dev/null 2>&1; then
         local policy_json
@@ -164,6 +165,7 @@ obtener_politica_volumen() {
             POL_MODE_FILE=$(echo "$policy_json" | jq -r '.mode_file // "0660"' 2>/dev/null || echo "0660")
             POL_SELINUX=$(echo "$policy_json" | jq -r '.selinux_context // "container_file_t"' 2>/dev/null || echo "container_file_t")
             POL_ALLOW_SUB=$(echo "$policy_json" | jq -r '.allow_subfolder_overrides // true' 2>/dev/null || echo "true")
+            POL_CONTAINER_MANAGED=$(echo "$policy_json" | jq -r '.container_managed // false' 2>/dev/null || echo "false")
         fi
     fi
 }

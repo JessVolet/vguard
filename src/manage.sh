@@ -55,7 +55,7 @@ renombrar_almacenamiento() {
     VGUARD_SELINUX=""
     VGUARD_LV_PATH=""
     # shellcheck source=/dev/null
-    source "$meta_file"
+    source "$meta_file" 2>/dev/null || true
 
     local nombre_actual="${VGUARD_SERVICE_NAME:-$(basename "$ruta_actual")}"
 
